@@ -3,76 +3,48 @@ package com.example.ui.tools.design
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
-import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.RadialGradient
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 enum class WeddingClipartType(val title: String, val subtitle: String) {
-    DULHA_DULHAN_ROYAL("Royal Dulha-Dulhan", "Traditional Couple Clipart with Varmala"),
     GANPATI_AUSPICIOUS("Ganpati Bappa", "Shree Ganesha Blessing & Sacred Halo"),
-    SHEHNAI_KALASH("Shehnai & Kalash", "Traditional Wedding Music & Mangal Kalash"),
-    CUSTOM_PHOTOS("Upload Custom Photos", "Your own Bride & Groom pictures")
+    DULHA_DULHAN_ROYAL("Dulha-Dulhan Art", "Traditional Couple Clipart with Varmala"),
+    SHEHNAI_KALASH("Shehnai & Kalash", "Mangal Kalash, Swastik & Twin Shehnais"),
+    FLORAL_TORAN("Floral Garland", "Auspicious Marigold & Rose Toran"),
+    ROYAL_RINGS("Wedding Rings", "Interlocking Gold Rings & Hearts")
 }
 
 object WeddingClipartRenderer {
 
-    /**
-     * Generates a high-resolution Ganpati Bappa auspicious emblem bitmap (400x320)
-     */
     fun createGanpatiBitmap(accentColor: Int = AndroidColor.rgb(255, 215, 0)): Bitmap {
         val width = 400
-        val height = 320
+        val height = 300
         val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
 
         val cx = width / 2f
-        val cy = height / 2f - 20f
+        val cy = height / 2f - 18f
 
-        // Golden aura / sunburst halo behind Ganpati
         val haloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = RadialGradient(
-                cx, cy, 140f,
-                intArrayOf(AndroidColor.argb(200, 255, 223, 0), AndroidColor.argb(80, 255, 140, 0), AndroidColor.TRANSPARENT),
+                cx, cy, 135f,
+                intArrayOf(
+                    AndroidColor.argb(190, 255, 223, 0),
+                    AndroidColor.argb(75, 255, 140, 0),
+                    AndroidColor.TRANSPARENT
+                ),
                 floatArrayOf(0f, 0.7f, 1f),
                 Shader.TileMode.CLAMP
             )
         }
-        canvas.drawCircle(cx, cy, 130f, haloPaint)
+        canvas.drawCircle(cx, cy, 125f, haloPaint)
 
-        // Mukut (Crown)
         val goldPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(245, 185, 30)
             style = Paint.Style.FILL
@@ -83,111 +55,95 @@ object WeddingClipartRenderer {
         }
 
         val crownPath = Path().apply {
-            moveTo(cx, cy - 110f)
-            lineTo(cx - 50f, cy - 40f)
-            lineTo(cx + 50f, cy - 40f)
+            moveTo(cx, cy - 105f)
+            lineTo(cx - 48f, cy - 38f)
+            lineTo(cx + 48f, cy - 38f)
             close()
         }
         canvas.drawPath(crownPath, goldPaint)
+        canvas.drawCircle(cx, cy - 62f, 11f, redPaint)
+        canvas.drawCircle(cx, cy - 105f, 6f, redPaint)
 
-        // Crown jewel
-        canvas.drawCircle(cx, cy - 65f, 12f, redPaint)
-        canvas.drawCircle(cx, cy - 110f, 7f, redPaint)
-
-        // Large Ganesha Ears
         val earPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(255, 200, 70)
             style = Paint.Style.FILL
         }
-        canvas.drawOval(RectF(cx - 95f, cy - 40f, cx - 25f, cy + 30f), earPaint)
-        canvas.drawOval(RectF(cx + 25f, cy - 40f, cx + 95f, cy + 30f), earPaint)
+        canvas.drawOval(RectF(cx - 92f, cy - 38f, cx - 24f, cy + 28f), earPaint)
+        canvas.drawOval(RectF(cx + 24f, cy - 38f, cx + 92f, cy + 28f), earPaint)
 
-        // Ear inner detailing
         val innerEarPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(230, 80, 50)
             style = Paint.Style.FILL
             alpha = 180
         }
-        canvas.drawOval(RectF(cx - 85f, cy - 30f, cx - 35f, cy + 20f), innerEarPaint)
-        canvas.drawOval(RectF(cx + 35f, cy - 30f, cx + 85f, cy + 20f), innerEarPaint)
+        canvas.drawOval(RectF(cx - 82f, cy - 28f, cx - 34f, cy + 18f), innerEarPaint)
+        canvas.drawOval(RectF(cx + 34f, cy - 28f, cx + 82f, cy + 18f), innerEarPaint)
 
-        // Ganesha Head & Trunk
         val facePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(255, 215, 90)
             style = Paint.Style.FILL
         }
-        canvas.drawCircle(cx, cy - 10f, 45f, facePaint)
+        canvas.drawCircle(cx, cy - 10f, 44f, facePaint)
 
-        // Sacred Trishul / Tilak on forehead
         val tilakPath = Path().apply {
-            moveTo(cx - 16f, cy - 30f)
-            quadTo(cx, cy - 15f, cx + 16f, cy - 30f)
-            lineTo(cx + 12f, cy - 42f)
-            quadTo(cx, cy - 25f, cx - 12f, cy - 42f)
+            moveTo(cx - 15f, cy - 28f)
+            quadTo(cx, cy - 14f, cx + 15f, cy - 28f)
+            lineTo(cx + 11f, cy - 40f)
+            quadTo(cx, cy - 24f, cx - 11f, cy - 40f)
             close()
         }
         canvas.drawPath(tilakPath, redPaint)
-        canvas.drawCircle(cx, cy - 25f, 5f, redPaint)
+        canvas.drawCircle(cx, cy - 24f, 5f, redPaint)
 
-        // Curved Trunk (Vakratunda)
         val trunkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(255, 195, 60)
             style = Paint.Style.STROKE
-            strokeWidth = 24f
+            strokeWidth = 22f
             strokeCap = Paint.Cap.ROUND
         }
         val trunkPath = Path().apply {
             moveTo(cx, cy - 5f)
-            quadTo(cx - 15f, cy + 45f, cx + 20f, cy + 55f)
-            quadTo(cx + 45f, cy + 55f, cx + 38f, cy + 40f)
+            quadTo(cx - 14f, cy + 44f, cx + 20f, cy + 54f)
+            quadTo(cx + 42f, cy + 54f, cx + 36f, cy + 38f)
         }
         canvas.drawPath(trunkPath, trunkPaint)
 
-        // Modak (sweet delicacy) on trunk tip
         val modakPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(255, 230, 100)
             style = Paint.Style.FILL
         }
-        canvas.drawCircle(cx + 45f, cy + 38f, 14f, modakPaint)
+        canvas.drawCircle(cx + 43f, cy + 36f, 12f, modakPaint)
 
-        // Auspicious Text underneath
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = accentColor
-            textSize = 28f
+            textSize = 26f
             isFakeBoldText = true
             textAlign = Paint.Align.CENTER
         }
-        canvas.drawText("॥ वक्रतुण्ड महाकाय सूर्यकोटि समप्रभ ॥", cx, height - 20f, textPaint)
-
+        canvas.drawText("॥ वक्रतुण्ड महाकाय ॥", cx, height - 16f, textPaint)
         return bmp
     }
 
-    /**
-     * Generates a readymade royal Dulha & Dulhan couple clipart illustration (500x320)
-     */
     fun createDulhaDulhanBitmap(accentColor: Int = AndroidColor.rgb(255, 215, 0)): Bitmap {
         val width = 500
-        val height = 320
+        val height = 300
         val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
 
         val groomCx = 180f
         val brideCx = 320f
-        val headCy = 110f
+        val headCy = 104f
 
-        // Soft royal aura behind couple
         val auraPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = RadialGradient(
-                250f, 150f, 200f,
-                intArrayOf(AndroidColor.argb(160, 255, 220, 120), AndroidColor.TRANSPARENT),
+                250f, 145f, 190f,
+                intArrayOf(AndroidColor.argb(150, 255, 220, 120), AndroidColor.TRANSPARENT),
                 floatArrayOf(0f, 1f),
                 Shader.TileMode.CLAMP
             )
         }
-        canvas.drawCircle(250f, 150f, 190f, auraPaint)
+        canvas.drawCircle(250f, 145f, 180f, auraPaint)
 
-        // --- Groom (Dulha) ---
-        // Pagdi / Turban (Royal Red with Golden Kalgi)
         val pagdiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(190, 25, 45)
             style = Paint.Style.FILL
@@ -196,90 +152,77 @@ object WeddingClipartRenderer {
             color = AndroidColor.rgb(255, 215, 0)
             style = Paint.Style.FILL
         }
-
-        // Turban dome & folds
-        canvas.drawOval(RectF(groomCx - 46f, headCy - 68f, groomCx + 46f, headCy - 20f), pagdiPaint)
+        canvas.drawOval(RectF(groomCx - 45f, headCy - 66f, groomCx + 45f, headCy - 18f), pagdiPaint)
         val kalgiPath = Path().apply {
-            moveTo(groomCx, headCy - 85f)
-            lineTo(groomCx - 12f, headCy - 60f)
-            lineTo(groomCx + 12f, headCy - 60f)
+            moveTo(groomCx, headCy - 84f)
+            lineTo(groomCx - 12f, headCy - 58f)
+            lineTo(groomCx + 12f, headCy - 58f)
             close()
         }
         canvas.drawPath(kalgiPath, goldTrim)
-        canvas.drawCircle(groomCx, headCy - 58f, 7f, goldTrim)
+        canvas.drawCircle(groomCx, headCy - 56f, 7f, goldTrim)
 
-        // Groom Face
         val skinPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(240, 195, 160)
             style = Paint.Style.FILL
         }
-        canvas.drawOval(RectF(groomCx - 36f, headCy - 30f, groomCx + 36f, headCy + 42f), skinPaint)
+        canvas.drawOval(RectF(groomCx - 34f, headCy - 28f, groomCx + 34f, headCy + 40f), skinPaint)
 
-        // Groom Tilak & Mustache
         val tilakPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(200, 20, 20)
             strokeWidth = 4f
             style = Paint.Style.STROKE
         }
-        canvas.drawLine(groomCx, headCy - 15f, groomCx, headCy - 3f, tilakPaint)
+        canvas.drawLine(groomCx, headCy - 14f, groomCx, headCy - 2f, tilakPaint)
 
-        // Groom Sherwani (Golden Cream with Maroon Stole)
         val sherwaniPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(248, 240, 220)
             style = Paint.Style.FILL
         }
         val groomBody = Path().apply {
-            moveTo(groomCx - 50f, headCy + 42f)
-            lineTo(groomCx + 45f, headCy + 42f)
-            lineTo(groomCx + 70f, headCy + 150f)
-            lineTo(groomCx - 75f, headCy + 150f)
+            moveTo(groomCx - 48f, headCy + 40f)
+            lineTo(groomCx + 44f, headCy + 40f)
+            lineTo(groomCx + 68f, headCy + 146f)
+            lineTo(groomCx - 72f, headCy + 146f)
             close()
         }
         canvas.drawPath(groomBody, sherwaniPaint)
 
-        // Royal Stole / Dupatta (Dupatta across groom)
         val stolePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(180, 20, 40)
             style = Paint.Style.FILL
         }
         val stolePath = Path().apply {
-            moveTo(groomCx - 40f, headCy + 42f)
-            lineTo(groomCx - 15f, headCy + 42f)
-            lineTo(groomCx + 25f, headCy + 150f)
-            lineTo(groomCx - 10f, headCy + 150f)
+            moveTo(groomCx - 38f, headCy + 40f)
+            lineTo(groomCx - 14f, headCy + 40f)
+            lineTo(groomCx + 24f, headCy + 146f)
+            lineTo(groomCx - 10f, headCy + 146f)
             close()
         }
         canvas.drawPath(stolePath, stolePaint)
 
-        // --- Bride (Dulhan) ---
-        // Bridal Chunari / Veil (Embroidered Crimson Red)
         val lehengaPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(215, 20, 45)
             style = Paint.Style.FILL
         }
-        // Chunari drape
         val chunariPath = Path().apply {
-            moveTo(brideCx, headCy - 55f)
-            quadTo(brideCx - 60f, headCy, brideCx - 55f, headCy + 150f)
-            lineTo(brideCx + 75f, headCy + 150f)
-            quadTo(brideCx + 65f, headCy, brideCx, headCy - 55f)
+            moveTo(brideCx, headCy - 54f)
+            quadTo(brideCx - 58f, headCy, brideCx - 52f, headCy + 146f)
+            lineTo(brideCx + 72f, headCy + 146f)
+            quadTo(brideCx + 62f, headCy, brideCx, headCy - 54f)
             close()
         }
         canvas.drawPath(chunariPath, lehengaPaint)
 
-        // Bride Face
         val brideSkinPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(248, 205, 175)
             style = Paint.Style.FILL
         }
-        canvas.drawOval(RectF(brideCx - 33f, headCy - 28f, brideCx + 33f, headCy + 38f), brideSkinPaint)
+        canvas.drawOval(RectF(brideCx - 32f, headCy - 26f, brideCx + 32f, headCy + 36f), brideSkinPaint)
+        canvas.drawCircle(brideCx, headCy - 20f, 6f, goldTrim)
+        canvas.drawLine(brideCx, headCy - 36f, brideCx, headCy - 20f, tilakPaint)
+        canvas.drawCircle(brideCx, headCy - 10f, 4f, tilakPaint)
 
-        // Maang Tikka (Golden bridal jewel on forehead)
-        canvas.drawCircle(brideCx, headCy - 22f, 6f, goldTrim)
-        canvas.drawLine(brideCx, headCy - 38f, brideCx, headCy - 22f, tilakPaint)
-
-        // Nath (Nose ring) & Bindi
-        canvas.drawCircle(brideCx, headCy - 12f, 4f, tilakPaint)
         val nathPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(255, 215, 0)
             style = Paint.Style.STROKE
@@ -287,64 +230,42 @@ object WeddingClipartRenderer {
         }
         canvas.drawCircle(brideCx - 8f, headCy + 8f, 7f, nathPaint)
 
-        // Bridal Blouse & Jewelry
         val brideBody = Path().apply {
-            moveTo(brideCx - 42f, headCy + 38f)
-            lineTo(brideCx + 48f, headCy + 38f)
-            lineTo(brideCx + 65f, headCy + 150f)
-            lineTo(brideCx - 55f, headCy + 150f)
+            moveTo(brideCx - 40f, headCy + 36f)
+            lineTo(brideCx + 46f, headCy + 36f)
+            lineTo(brideCx + 62f, headCy + 146f)
+            lineTo(brideCx - 52f, headCy + 146f)
             close()
         }
         canvas.drawPath(brideBody, lehengaPaint)
+        canvas.drawOval(RectF(brideCx - 20f, headCy + 36f, brideCx + 20f, headCy + 62f), nathPaint)
 
-        // Golden Rani Haar (Necklace)
-        canvas.drawOval(RectF(brideCx - 22f, headCy + 38f, brideCx + 22f, headCy + 65f), nathPaint)
-
-        // --- Varmala (Garlands) around couple ---
-        val garlandPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = AndroidColor.rgb(255, 80, 80)
-            style = Paint.Style.STROKE
-            strokeWidth = 14f
-            strokeCap = Paint.Cap.ROUND
-        }
-        val goldGarlandDot = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = AndroidColor.rgb(255, 220, 50)
-            style = Paint.Style.FILL
-        }
-
-        // Connecting Varmala in center
         val centerHeartPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(230, 30, 60)
-            textSize = 42f
+            textSize = 40f
             textAlign = Paint.Align.CENTER
         }
-        canvas.drawText("❤", 250f, headCy + 65f, centerHeartPaint)
+        canvas.drawText("❤", 250f, headCy + 64f, centerHeartPaint)
 
-        // Auspicious Label
         val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = accentColor
-            textSize = 28f
+            textSize = 25f
             isFakeBoldText = true
             textAlign = Paint.Align.CENTER
         }
-        canvas.drawText("शुभ विवाह • Perfect Pair", 250f, height - 15f, labelPaint)
-
+        canvas.drawText("शुभ विवाह • Forever Together", 250f, height - 14f, labelPaint)
         return bmp
     }
 
-    /**
-     * Generates traditional Shehnai & Kalash clipart (460x220)
-     */
     fun createShehnaiKalashBitmap(accentColor: Int = AndroidColor.rgb(255, 215, 0)): Bitmap {
         val width = 460
-        val height = 220
+        val height = 200
         val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
 
         val cx = width / 2f
-        val kalashCy = 115f
+        val kalashCy = 104f
 
-        // --- Center Kalash ---
         val goldPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(240, 190, 40)
             style = Paint.Style.FILL
@@ -362,189 +283,181 @@ object WeddingClipartRenderer {
             style = Paint.Style.FILL
         }
 
-        // Kalash Pot body
         val potPath = Path().apply {
-            moveTo(cx - 30f, kalashCy - 10f)
-            quadTo(cx - 60f, kalashCy + 30f, cx - 40f, kalashCy + 65f)
-            lineTo(cx + 40f, kalashCy + 65f)
-            quadTo(cx + 60f, kalashCy + 30f, cx + 30f, kalashCy - 10f)
+            moveTo(cx - 28f, kalashCy - 10f)
+            quadTo(cx - 56f, kalashCy + 28f, cx - 38f, kalashCy + 60f)
+            lineTo(cx + 38f, kalashCy + 60f)
+            quadTo(cx + 56f, kalashCy + 28f, cx + 28f, kalashCy - 10f)
             close()
         }
         canvas.drawPath(potPath, goldPaint)
+        canvas.drawRect(cx - 32f, kalashCy - 18f, cx + 32f, kalashCy - 10f, brassPaint)
 
-        // Kalash Rim
-        canvas.drawRect(cx - 35f, kalashCy - 18f, cx + 35f, kalashCy - 10f, brassPaint)
-
-        // Swastik on Kalash
         val swastikPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(210, 30, 40)
             strokeWidth = 4f
             style = Paint.Style.STROKE
         }
-        canvas.drawLine(cx, kalashCy + 15f, cx, kalashCy + 45f, swastikPaint)
-        canvas.drawLine(cx - 15f, kalashCy + 30f, cx + 15f, kalashCy + 30f, swastikPaint)
-        canvas.drawLine(cx - 15f, kalashCy + 30f, cx - 15f, kalashCy + 20f, swastikPaint)
-        canvas.drawLine(cx + 15f, kalashCy + 30f, cx + 15f, kalashCy + 40f, swastikPaint)
-        canvas.drawLine(cx, kalashCy + 15f, cx + 10f, kalashCy + 15f, swastikPaint)
-        canvas.drawLine(cx, kalashCy + 45f, cx - 10f, kalashCy + 45f, swastikPaint)
+        canvas.drawLine(cx, kalashCy + 14f, cx, kalashCy + 42f, swastikPaint)
+        canvas.drawLine(cx - 14f, kalashCy + 28f, cx + 14f, kalashCy + 28f, swastikPaint)
+        canvas.drawLine(cx - 14f, kalashCy + 28f, cx - 14f, kalashCy + 18f, swastikPaint)
+        canvas.drawLine(cx + 14f, kalashCy + 28f, cx + 14f, kalashCy + 38f, swastikPaint)
+        canvas.drawLine(cx, kalashCy + 14f, cx + 10f, kalashCy + 14f, swastikPaint)
+        canvas.drawLine(cx, kalashCy + 42f, cx - 10f, kalashCy + 42f, swastikPaint)
 
-        // Mango Leaves (Amra Pallav)
         val leaf1 = Path().apply {
             moveTo(cx, kalashCy - 18f)
-            quadTo(cx - 45f, kalashCy - 45f, cx - 50f, kalashCy - 20f)
+            quadTo(cx - 42f, kalashCy - 42f, cx - 48f, kalashCy - 18f)
             close()
         }
         val leaf2 = Path().apply {
             moveTo(cx, kalashCy - 18f)
-            quadTo(cx + 45f, kalashCy - 45f, cx + 50f, kalashCy - 20f)
+            quadTo(cx + 42f, kalashCy - 42f, cx + 48f, kalashCy - 18f)
             close()
         }
         canvas.drawPath(leaf1, greenPaint)
         canvas.drawPath(leaf2, greenPaint)
 
-        // Nariyal (Coconut on top)
         val coconutPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(139, 69, 19)
             style = Paint.Style.FILL
         }
-        canvas.drawOval(RectF(cx - 24f, kalashCy - 55f, cx + 24f, kalashCy - 16f), coconutPaint)
+        canvas.drawOval(RectF(cx - 22f, kalashCy - 52f, cx + 22f, kalashCy - 16f), coconutPaint)
+        canvas.drawCircle(cx, kalashCy - 34f, 6f, redPaint)
 
-        // Sacred Thread / Tilak on coconut
-        canvas.drawCircle(cx, kalashCy - 35f, 6f, redPaint)
-
-        // --- Twin Shehnais (Left & Right) ---
         val shehnaiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = AndroidColor.rgb(255, 210, 50)
             style = Paint.Style.STROKE
-            strokeWidth = 10f
+            strokeWidth = 9f
             strokeCap = Paint.Cap.ROUND
         }
+        canvas.drawLine(44f, kalashCy + 36f, cx - 72f, kalashCy - 28f, shehnaiPaint)
+        canvas.drawLine(width - 44f, kalashCy + 36f, cx + 72f, kalashCy - 28f, shehnaiPaint)
 
-        // Left Shehnai
-        val leftShehnai = Path().apply {
-            moveTo(40f, kalashCy + 40f)
-            lineTo(cx - 75f, kalashCy - 30f)
-        }
-        canvas.drawPath(leftShehnai, shehnaiPaint)
-        // Left bell flare
-        val leftBell = Path().apply {
-            moveTo(40f, kalashCy + 40f)
-            lineTo(20f, kalashCy + 25f)
-            lineTo(25f, kalashCy + 55f)
-            close()
-        }
-        canvas.drawPath(leftBell, goldPaint)
-
-        // Right Shehnai
-        val rightShehnai = Path().apply {
-            moveTo(width - 40f, kalashCy + 40f)
-            lineTo(cx + 75f, kalashCy - 30f)
-        }
-        canvas.drawPath(rightShehnai, shehnaiPaint)
-        // Right bell flare
-        val rightBell = Path().apply {
-            moveTo(width - 40f, kalashCy + 40f)
-            lineTo(width - 20f, kalashCy + 25f)
-            lineTo(width - 25f, kalashCy + 55f)
-            close()
-        }
-        canvas.drawPath(rightBell, goldPaint)
-
-        // Musical Swar & Blessings text
         val musicPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = accentColor
-            textSize = 24f
+            textSize = 22f
             isFakeBoldText = true
             textAlign = Paint.Align.CENTER
         }
-        canvas.drawText("♬  मंगल वाद्य व शहनाई  ♬", cx, height - 12f, musicPaint)
-
+        canvas.drawText("♬ मंगल वाद्य व शहनाई ♬", cx, height - 10f, musicPaint)
         return bmp
     }
-}
 
-@Composable
-fun WeddingClipartSelector(
-    selectedType: WeddingClipartType,
-    onSelectType: (WeddingClipartType) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "✨ Wedding Clipart & Couple Avatars",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Choose ready-made Ganpati Bappa, Dulha-Dulhan, or Shehnai clipart:",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            WeddingClipartType.values().forEach { type ->
-                val isSelected = selectedType == type
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clickable { onSelectType(type) },
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(
-                        width = if (isSelected) 2.dp else 1.dp,
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            val icon = when (type) {
-                                WeddingClipartType.GANPATI_AUSPICIOUS -> Icons.Default.Star
-                                WeddingClipartType.DULHA_DULHAN_ROYAL -> Icons.Default.Favorite
-                                WeddingClipartType.SHEHNAI_KALASH -> Icons.Default.MusicNote
-                                WeddingClipartType.CUSTOM_PHOTOS -> Icons.Default.CheckCircle
-                            }
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = type.title,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = type.subtitle,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Selected",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
+    fun createFloralToranBitmap(width: Int = 900, height: Int = 110): Bitmap {
+        val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val leafPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = AndroidColor.rgb(34, 139, 34)
+            style = Paint.Style.FILL
+        }
+        val marigold = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = AndroidColor.rgb(255, 165, 0)
+            style = Paint.Style.FILL
+        }
+        val rose = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = AndroidColor.rgb(225, 29, 72)
+            style = Paint.Style.FILL
+        }
+        val stringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = AndroidColor.rgb(251, 191, 36)
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+        }
+        val swagCount = 5
+        val segW = width.toFloat() / swagCount
+        for (i in 0 until swagCount) {
+            val sx = i * segW
+            val ex = sx + segW
+            val mx = (sx + ex) / 2f
+            val path = Path().apply {
+                moveTo(sx, 12f)
+                quadTo(mx, height * 0.78f, ex, 12f)
             }
+            canvas.drawPath(path, stringPaint)
+            for (step in 1..4) {
+                val t = step / 5f
+                val px = sx + segW * t
+                val py = 12f + 4f * t * (1f - t) * (height * 0.65f)
+                canvas.drawCircle(px, py, 14f, if (step % 2 == 0) rose else marigold)
+                canvas.drawOval(RectF(px - 7f, py + 10f, px + 7f, py + 26f), leafPaint)
+            }
+        }
+        return bmp
+    }
+
+    fun createRingsMotifBitmap(accentColor: Int = AndroidColor.rgb(255, 215, 0)): Bitmap {
+        val w = 280
+        val h = 150
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = accentColor
+            style = Paint.Style.STROKE
+            strokeWidth = 10f
+        }
+        canvas.drawCircle(w / 2f - 28f, h / 2f + 6f, 38f, ringPaint)
+        canvas.drawCircle(w / 2f + 28f, h / 2f + 6f, 38f, ringPaint)
+        val diamondPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = AndroidColor.rgb(224, 242, 254)
+            style = Paint.Style.FILL
+        }
+        val dPath = Path().apply {
+            moveTo(w / 2f - 28f, h / 2f - 46f)
+            lineTo(w / 2f - 14f, h / 2f - 32f)
+            lineTo(w / 2f - 28f, h / 2f - 22f)
+            lineTo(w / 2f - 42f, h / 2f - 32f)
+            close()
+        }
+        canvas.drawPath(dPath, diamondPaint)
+        return bmp
+    }
+
+    fun drawCenterCroppedPhoto(
+        canvas: Canvas,
+        photo: Bitmap,
+        dst: RectF,
+        isCircle: Boolean,
+        cornerRadius: Float,
+        borderColor: Int,
+        borderWidth: Float = 8f
+    ) {
+        val targetW = dst.width().toInt().coerceAtLeast(1)
+        val targetH = dst.height().toInt().coerceAtLeast(1)
+
+        // Center-crop photo into temporary bitmap
+        val scale = maxOf(targetW.toFloat() / photo.width, targetH.toFloat() / photo.height)
+        val scaledW = (photo.width * scale).toInt().coerceAtLeast(1)
+        val scaledH = (photo.height * scale).toInt().coerceAtLeast(1)
+        val leftOffset = (targetW - scaledW) / 2f
+        val topOffset = (targetH - scaledH) / 2f
+
+        val masked = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888)
+        val mCanvas = Canvas(masked)
+        val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        if (isCircle) {
+            val r = minOf(targetW, targetH) / 2f
+            mCanvas.drawCircle(targetW / 2f, targetH / 2f, r, maskPaint)
+        } else {
+            mCanvas.drawRoundRect(RectF(0f, 0f, targetW.toFloat(), targetH.toFloat()), cornerRadius, cornerRadius, maskPaint)
+        }
+        maskPaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+        val srcRect = Rect(0, 0, photo.width, photo.height)
+        val drawDst = RectF(leftOffset, topOffset, leftOffset + scaledW, topOffset + scaledH)
+        mCanvas.drawBitmap(photo, srcRect, drawDst, maskPaint)
+
+        canvas.drawBitmap(masked, dst.left, dst.top, null)
+
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = borderColor
+            style = Paint.Style.STROKE
+            strokeWidth = borderWidth
+        }
+        if (isCircle) {
+            val r = minOf(dst.width(), dst.height()) / 2f
+            canvas.drawCircle(dst.centerX(), dst.centerY(), r, borderPaint)
+        } else {
+            canvas.drawRoundRect(dst, cornerRadius, cornerRadius, borderPaint)
         }
     }
 }

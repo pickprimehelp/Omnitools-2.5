@@ -53,6 +53,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,14 +81,16 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.abs
 
 data class VoiceFilter(
     val name: String,
     val emoji: String,
     val pitch: Float,
-    val speed: Float,
     val description: String,
-    val color: Color
+    val color: Color,
+    val addRobotMod: Boolean = false,
+    val addEcho: Boolean = false
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,16 +111,18 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
     var isRecording by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
     var recordSeconds by remember { mutableIntStateOf(0) }
+    var micLevel by remember { mutableFloatStateOf(0f) }
     var recordedPcm by remember { mutableStateOf<ShortArray?>(null) }
 
     val filters = remember {
         listOf(
-            VoiceFilter("Normal", "🎙️", 1.0f, 1.0f, "Natural studio voice", Color(0xFF3B82F6)),
-            VoiceFilter("Chipmunk", "🐿️", 1.55f, 1.15f, "High-pitched funny cartoon", Color(0xFFF59E0B)),
-            VoiceFilter("Helium", "🎈", 1.80f, 1.05f, "Ultra light helium balloon", Color(0xFFEC4899)),
-            VoiceFilter("Deep Monster", "👹", 0.65f, 0.90f, "Heavy cinematic villain", Color(0xFFEF4444)),
-            VoiceFilter("Robot", "🤖", 0.92f, 1.0f, "Metallic sci-fi modulator", Color(0xFF06B6D4)),
-            VoiceFilter("Slow-Mo", "🐢", 0.80f, 0.72f, "Dramatic slow-motion effect", Color(0xFF8B5CF6))
+            VoiceFilter("Normal", "🎙️", 1.0f, "Clean natural studio voice", Color(0xFF3B82F6)),
+            VoiceFilter("Chipmunk", "🐿️", 1.55f, "High-pitched funny cartoon", Color(0xFFF59E0B)),
+            VoiceFilter("Helium", "🎈", 1.85f, "Ultra light helium balloon", Color(0xFFEC4899)),
+            VoiceFilter("Deep Monster", "👹", 0.68f, "Heavy cinematic villain", Color(0xFFEF4444)),
+            VoiceFilter("Robot", "🤖", 0.95f, "Metallic sci-fi modulator", Color(0xFF06B6D4), addRobotMod = true),
+            VoiceFilter("Cave Echo", "🏔️", 0.92f, "Dramatic hall & echo reverb", Color(0xFF10B981), addEcho = true),
+            VoiceFilter("Slow-Mo", "🐢", 0.72f, "Dramatic slow-motion effect", Color(0xFF8B5CF6))
         )
     }
     var selectedFilter by remember { mutableStateOf(filters.first()) }
@@ -182,12 +187,21 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
                 while (isActive && isRecording) {
                     val read = recorder.read(buf, 0, buf.size)
                     if (read > 0) {
+                        var peak = 0
                         val bb = ByteBuffer.allocate(read * 2).order(ByteOrder.LITTLE_ENDIAN)
-                        for (i in 0 until read) bb.putShort(buf[i])
+                        for (i in 0 until read) {
+                            bb.putShort(buf[i])
+                            val a = abs(buf[i].toInt())
+                            if (a > peak) peak = a
+                        }
                         out.write(bb.array())
+                        val level = (peak / 20000f).coerceIn(0f, 1f)
+                        val secs = ((System.currentTimeMillis() - startMs) / 1000L).toInt()
+                        withContext(Dispatchers.Main) {
+                            recordSeconds = secs
+                            micLevel = level
+                        }
                     }
-                    val secs = ((System.currentTimeMillis() - startMs) / 1000L).toInt()
-                    withContext(Dispatchers.Main) { recordSeconds = secs }
                 }
                 recorder.stop()
             } catch (_: Exception) {
@@ -202,6 +216,7 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
             withContext(Dispatchers.Main) {
                 recordedPcm = shorts
                 isRecording = false
+                micLevel = 0f
             }
         }
     }
@@ -210,11 +225,8 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasMicPermission = granted
-        if (granted) {
-            startRecording()
-        } else {
-            Toast.makeText(context, "Microphone permission denied", Toast.LENGTH_SHORT).show()
-        }
+        if (granted) startRecording()
+        else Toast.makeText(context, "Microphone permission denied", Toast.LENGTH_SHORT).show()
     }
 
     fun playFilteredVoice() {
@@ -223,8 +235,7 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
         isPlaying = true
 
         scope.launch(Dispatchers.IO) {
-            val processed = applyVoiceFilter(source, selectedFilter)
-            val playbackRate = (sampleRate * selectedFilter.pitch).toInt().coerceIn(8000, 48000)
+            val processed = applyVoiceFilter(source, selectedFilter, sampleRate)
             val bufBytes = (processed.size * 2).coerceAtLeast(4096)
 
             val track = AudioTrack.Builder()
@@ -237,7 +248,7 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
                 .setAudioFormat(
                     AudioFormat.Builder()
                         .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(playbackRate)
+                        .setSampleRate(sampleRate)
                         .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                         .build()
                 )
@@ -249,7 +260,7 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
             try {
                 track.write(processed, 0, processed.size)
                 track.play()
-                val durationMs = ((processed.size.toDouble() / playbackRate) * 1000.0).toLong().coerceAtLeast(300L)
+                val durationMs = ((processed.size.toDouble() / sampleRate) * 1000.0).toLong().coerceAtLeast(300L)
                 delay(durationMs + 150L)
             } catch (_: Exception) {
             } finally {
@@ -269,11 +280,10 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
         if (source.isEmpty()) return
         scope.launch(Dispatchers.IO) {
             try {
-                val processed = applyVoiceFilter(source, selectedFilter)
-                val playbackRate = (sampleRate * selectedFilter.pitch).toInt().coerceIn(8000, 48000)
+                val processed = applyVoiceFilter(source, selectedFilter, sampleRate)
                 val cacheDir = File(context.cacheDir, "audio").apply { mkdirs() }
-                val audioFile = File(cacheDir, "omnitools_${selectedFilter.name.lowercase()}.wav")
-                writeWavFile(audioFile, processed, playbackRate)
+                val audioFile = File(cacheDir, "omnitools_${selectedFilter.name.lowercase().replace(" ", "_")}.wav")
+                writeWavFile(audioFile, processed, sampleRate)
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", audioFile)
                 withContext(Dispatchers.Main) {
                     val intent = Intent(Intent.ACTION_SEND).apply {
@@ -328,17 +338,11 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
                             modifier = Modifier
                                 .size(88.dp)
                                 .clip(CircleShape)
-                                .background(
-                                    if (isRecording) Color(0xFFEF4444) else MaterialTheme.colorScheme.primary
-                                )
+                                .background(if (isRecording) Color(0xFFEF4444) else MaterialTheme.colorScheme.primary)
                                 .clickable {
-                                    if (isRecording) {
-                                        isRecording = false
-                                    } else if (hasMicPermission) {
-                                        startRecording()
-                                    } else {
-                                        permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                    }
+                                    if (isRecording) isRecording = false
+                                    else if (hasMicPermission) startRecording()
+                                    else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                 }
                                 .testTag("record_voice_button"),
                             contentAlignment = Alignment.Center
@@ -354,12 +358,27 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
                         Text(
                             text = when {
                                 isRecording -> "Recording... ${recordSeconds}s (Tap to Stop)"
-                                recordedPcm != null -> "Voice Ready! Pick a filter below"
+                                recordedPcm != null -> "Voice Ready! Pick any effect below"
                                 else -> "Tap Mic to Record Your Voice"
                             },
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
+                        if (isRecording) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                repeat(10) { idx ->
+                                    val barH = (8 + (micLevel * 28f * ((idx % 3) + 1) / 2f)).dp
+                                    Box(
+                                        modifier = Modifier
+                                            .width(6.dp)
+                                            .height(barH)
+                                            .clip(RoundedCornerShape(3.dp))
+                                            .background(Color(0xFFEF4444))
+                                    )
+                                }
+                            }
+                        }
                         if (recordedPcm != null && !isRecording) {
                             Spacer(modifier = Modifier.height(14.dp))
                             Row(
@@ -369,7 +388,7 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
                                 Button(
                                     onClick = { playFilteredVoice() },
                                     enabled = !isPlaying,
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(1f).height(48.dp),
                                     shape = RoundedCornerShape(12.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = selectedFilter.color)
                                 ) {
@@ -379,7 +398,7 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
                                 }
                                 OutlinedButton(
                                     onClick = { shareFilteredWav() },
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(1f).height(48.dp),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -391,11 +410,7 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
                     }
                 }
             }
-
-            item {
-                Text("Select Voice Effect", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            }
-
+            item { Text("Select Voice Effect", fontWeight = FontWeight.Bold, fontSize = 15.sp) }
             items(filters) { filter ->
                 val isSelected = selectedFilter.name == filter.name
                 Card(
@@ -409,9 +424,7 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
                     )
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
+                        modifier = Modifier.fillMaxWidth().padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(filter.emoji, fontSize = 26.sp)
@@ -420,12 +433,7 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
                             Text(filter.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             Text(filter.description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Text(
-                            text = "${filter.pitch}x",
-                            fontWeight = FontWeight.Bold,
-                            color = filter.color,
-                            fontSize = 13.sp
-                        )
+                        Text("${filter.pitch}x", fontWeight = FontWeight.Bold, color = filter.color, fontSize = 13.sp)
                     }
                 }
             }
@@ -433,14 +441,37 @@ fun VoiceChangerScreen(onBack: () -> Unit) {
     }
 }
 
-private fun applyVoiceFilter(input: ShortArray, filter: VoiceFilter): ShortArray {
-    if (filter.name != "Robot") return input
-    val output = ShortArray(input.size)
-    for (i in input.indices) {
-        val mod = kotlin.math.sin(2.0 * Math.PI * 55.0 * i / 22050.0)
-        output[i] = (input[i] * mod).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+private fun applyVoiceFilter(input: ShortArray, filter: VoiceFilter, sampleRate: Int): ShortArray {
+    if (input.isEmpty()) return input
+    // 1. Resample for pitch shift so standard 22050Hz WAV export & playback match 100%
+    val outLen = (input.size / filter.pitch).toInt().coerceAtLeast(1)
+    val resampled = ShortArray(outLen)
+    for (i in 0 until outLen) {
+        val srcPos = i * filter.pitch
+        val idx0 = srcPos.toInt().coerceIn(0, input.lastIndex)
+        val idx1 = (idx0 + 1).coerceIn(0, input.lastIndex)
+        val frac = srcPos - idx0
+        val sample = input[idx0] * (1f - frac) + input[idx1] * frac
+        resampled[i] = sample.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
     }
-    return output
+
+    // 2. Optional Robot ring modulator
+    if (filter.addRobotMod) {
+        for (i in resampled.indices) {
+            val mod = kotlin.math.sin(2.0 * Math.PI * 55.0 * i / sampleRate.toDouble())
+            resampled[i] = (resampled[i] * mod).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+        }
+    }
+
+    // 3. Optional Cave Echo delay line (~180ms feedback)
+    if (filter.addEcho) {
+        val delaySamples = (sampleRate * 0.18).toInt()
+        for (i in delaySamples until resampled.size) {
+            val mixed = resampled[i].toInt() + (resampled[i - delaySamples].toInt() * 0.45f).toInt()
+            resampled[i] = mixed.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+        }
+    }
+    return resampled
 }
 
 private fun writeWavFile(file: File, pcm: ShortArray, sampleRate: Int) {

@@ -1,9 +1,13 @@
 package com.example.ui.tools.daily
 
 import android.graphics.Bitmap
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +21,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -31,6 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -49,8 +56,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -61,29 +70,45 @@ import com.example.ads.TopBannerAd
 import com.example.util.BarcodeQrUtils
 import com.example.util.ImageExportUtils
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QrCodeGeneratorScreen(onBack: () -> Unit) {
+fun QrCodeGeneratorScreen(
+    initialIsBarcode: Boolean = false,
+    onBack: () -> Unit
+) {
     BackHandler { onBack() }
     val context = LocalContext.current
     var inputText by remember { mutableStateOf("https://play.google.com") }
-    var isBarcode by remember { mutableStateOf(false) }
+    var isBarcode by remember { mutableStateOf(initialIsBarcode) }
+    var qrColorIndex by remember { mutableIntStateOf(0) }
 
-    val bitmap: Bitmap? = remember(inputText, isBarcode) {
+    val qrColors = listOf(Color.Black, Color(0xFF4338CA), Color(0xFF047857), Color(0xFFB91C1C))
+    val qrTemplates = listOf(
+        "URL" to "https://example.com",
+        "UPI Pay" to "upi://pay?pa=name@upi&pn=Merchant&cu=INR",
+        "WiFi" to "WIFI:T:WPA;S:MyNetwork;P:password123;;",
+        "Phone" to "tel:+919876543210"
+    )
+
+    val bitmap: Bitmap? = remember(inputText, isBarcode, qrColorIndex) {
         if (isBarcode) {
             BarcodeQrUtils.generateBarcodeBitmap(inputText)
         } else {
-            BarcodeQrUtils.generateQrBitmap(inputText)
+            BarcodeQrUtils.generateQrBitmap(inputText, foregroundColor = qrColors[qrColorIndex].toArgb())
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("QR & Barcode Generator", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                title = { Text("QR & Barcode Studio", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.testTag("back_button")) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -99,7 +124,7 @@ fun QrCodeGeneratorScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .padding(padding),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -107,11 +132,39 @@ fun QrCodeGeneratorScreen(onBack: () -> Unit) {
                     FilterChip(selected = isBarcode, onClick = { isBarcode = true }, label = { Text("Barcode (Code 128)") })
                 }
             }
+            if (!isBarcode) {
+                item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(qrTemplates) { (label, preset) ->
+                            FilterChip(selected = inputText == preset, onClick = { inputText = preset }, label = { Text(label, fontSize = 11.sp) })
+                        }
+                    }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("QR Color:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        qrColors.forEachIndexed { idx, c ->
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(CircleShape)
+                                    .background(c)
+                                    .border(
+                                        if (idx == qrColorIndex) 3.dp else 1.dp,
+                                        if (idx == qrColorIndex) MaterialTheme.colorScheme.primary else Color.LightGray,
+                                        CircleShape
+                                    )
+                                    .clickable { qrColorIndex = idx }
+                            )
+                        }
+                    }
+                }
+            }
             item {
                 OutlinedTextField(
                     value = inputText,
                     onValueChange = { inputText = it },
-                    label = { Text("Enter URL, UPI ID, WiFi or Text") },
+                    label = { Text("Enter URL, UPI, WiFi, Phone or Text") },
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -140,7 +193,7 @@ fun QrCodeGeneratorScreen(onBack: () -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
                             onClick = { ImageExportUtils.saveBitmapToGallery(context, bitmap, "OmniTools_Code") },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -149,7 +202,7 @@ fun QrCodeGeneratorScreen(onBack: () -> Unit) {
                         }
                         OutlinedButton(
                             onClick = { ImageExportUtils.shareBitmap(context, bitmap, "OmniTools QR Code") },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -165,35 +218,56 @@ fun QrCodeGeneratorScreen(onBack: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AgeCalculatorScreen(onBack: () -> Unit) {
+fun AgeCalculatorScreen(
+    initialMode: Int = 0, // 0 = Age & Next Birthday, 1 = Date Difference
+    onBack: () -> Unit
+) {
     BackHandler { onBack() }
+    var activeTab by remember { mutableIntStateOf(initialMode) }
+
     var birthYear by remember { mutableStateOf("2000") }
     var birthMonth by remember { mutableStateOf("1") }
-    var birthDay by remember { mutableStateOf("1") }
+    var birthDay by remember { mutableStateOf("15") }
+
+    var endYear by remember { mutableStateOf("2026") }
+    var endMonth by remember { mutableStateOf("12") }
+    var endDay by remember { mutableStateOf("31") }
 
     val now = Calendar.getInstance()
-    val y = (birthYear.toIntOrNull() ?: 2000).coerceIn(1900, now.get(Calendar.YEAR))
+    val y = (birthYear.toIntOrNull() ?: 2000).coerceIn(1900, 2100)
     val m = (birthMonth.toIntOrNull() ?: 1).coerceIn(1, 12)
     val d = (birthDay.toIntOrNull() ?: 1).coerceIn(1, 31)
-
     val dob = Calendar.getInstance().apply { set(y, m - 1, d, 0, 0, 0) }
+
     var years = now.get(Calendar.YEAR) - dob.get(Calendar.YEAR)
     var months = now.get(Calendar.MONTH) - dob.get(Calendar.MONTH)
     var days = now.get(Calendar.DAY_OF_MONTH) - dob.get(Calendar.DAY_OF_MONTH)
-    if (days < 0) {
-        months--
-        days += 30
-    }
-    if (months < 0) {
-        years--
-        months += 12
-    }
+    if (days < 0) { months--; days += 30 }
+    if (months < 0) { years--; months += 12 }
     val totalDays = ((now.timeInMillis - dob.timeInMillis) / (1000L * 60 * 60 * 24)).coerceAtLeast(0L)
+
+    val nextBday = Calendar.getInstance().apply {
+        set(now.get(Calendar.YEAR), m - 1, d, 0, 0, 0)
+        if (before(now)) add(Calendar.YEAR, 1)
+    }
+    val daysUntilBirthday = ((nextBday.timeInMillis - now.timeInMillis) / (1000L * 60 * 60 * 24)).coerceAtLeast(0L)
+
+    val ey = (endYear.toIntOrNull() ?: 2026).coerceIn(1900, 2100)
+    val em = (endMonth.toIntOrNull() ?: 12).coerceIn(1, 12)
+    val ed = (endDay.toIntOrNull() ?: 31).coerceIn(1, 31)
+    val endCal = Calendar.getInstance().apply { set(ey, em - 1, ed, 0, 0, 0) }
+    val diffDays = abs((endCal.timeInMillis - dob.timeInMillis) / (1000L * 60 * 60 * 24))
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Age & Date Calculator", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                title = {
+                    Text(
+                        if (activeTab == 0) "Age & Birthday Countdown" else "Date Difference Calculator",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.testTag("back_button")) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -209,9 +283,17 @@ fun AgeCalculatorScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .padding(padding),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = activeTab == 0, onClick = { activeTab = 0 }, label = { Text("Age Calculator") })
+                    FilterChip(selected = activeTab == 1, onClick = { activeTab = 1 }, label = { Text("Date Difference") })
+                }
+            }
+            item {
+                Text(if (activeTab == 0) "Date of Birth" else "Start Date", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Spacer(modifier = Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = birthDay,
@@ -239,6 +321,38 @@ fun AgeCalculatorScreen(onBack: () -> Unit) {
                     )
                 }
             }
+            if (activeTab == 1) {
+                item {
+                    Text("End Date", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = endDay,
+                            onValueChange = { endDay = it.filter { c -> c.isDigit() }.take(2) },
+                            label = { Text("Day") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = endMonth,
+                            onValueChange = { endMonth = it.filter { c -> c.isDigit() }.take(2) },
+                            label = { Text("Month") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = endYear,
+                            onValueChange = { endYear = it.filter { c -> c.isDigit() }.take(4) },
+                            label = { Text("Year") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1.3f)
+                        )
+                    }
+                }
+            }
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -246,14 +360,25 @@ fun AgeCalculatorScreen(onBack: () -> Unit) {
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
                 ) {
                     Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = "${years.coerceAtLeast(0)} Years, $months Months, $days Days",
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 20.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text("Total Days Lived: $totalDays days")
-                        Text("Total Hours: ${totalDays * 24} hours")
+                        if (activeTab == 0) {
+                            Text(
+                                text = "${years.coerceAtLeast(0)} Years, $months Months, $days Days",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 20.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text("Next Birthday in: $daysUntilBirthday days 🎂", fontWeight = FontWeight.SemiBold)
+                            Text("Total Days Lived: $totalDays days (${totalDays * 24} hrs)")
+                        } else {
+                            Text(
+                                text = "$diffDays Total Days",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 22.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text("Weeks: ${diffDays / 7} weeks & ${diffDays % 7} days")
+                            Text("Approx Months: ${String.format(Locale.US, "%.1f", diffDays / 30.4375)} months")
+                        }
                     }
                 }
             }
@@ -271,12 +396,14 @@ fun BmiCalculatorScreen(onBack: () -> Unit) {
     val w = weightKg.toDoubleOrNull() ?: 0.0
     val hMeters = (heightCm.toDoubleOrNull() ?: 0.0) / 100.0
     val bmi = if (hMeters > 0.0) w / (hMeters * hMeters) else 0.0
-    val category = when {
-        bmi <= 0.0 -> "Enter valid height & weight"
-        bmi < 18.5 -> "Underweight"
-        bmi < 25.0 -> "Normal & Healthy"
-        bmi < 30.0 -> "Overweight"
-        else -> "Obese"
+    val idealMin = 18.5 * hMeters * hMeters
+    val idealMax = 24.9 * hMeters * hMeters
+    val (category, statusColor) = when {
+        bmi <= 0.0 -> "Enter valid height & weight" to Color.Gray
+        bmi < 18.5 -> "Underweight" to Color(0xFF0284C7)
+        bmi < 25.0 -> "Normal & Healthy" to Color(0xFF10B981)
+        bmi < 30.0 -> "Overweight" to Color(0xFFF59E0B)
+        else -> "Obese" to Color(0xFFEF4444)
     }
 
     Scaffold(
@@ -294,9 +421,7 @@ fun BmiCalculatorScreen(onBack: () -> Unit) {
         bottomBar = { TopBannerAd() }
     ) { padding ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -323,17 +448,23 @@ fun BmiCalculatorScreen(onBack: () -> Unit) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
                 ) {
-                    Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            "BMI: ${String.format(Locale.US, "%.1f", bmi)}",
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 24.sp,
-                            color = MaterialTheme.colorScheme.primary
+                    Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("BMI: ${String.format(Locale.US, "%.1f", bmi)}", fontWeight = FontWeight.ExtraBold, fontSize = 26.sp, color = statusColor)
+                        Text("Status: $category", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = statusColor)
+                        LinearProgressIndicator(
+                            progress = { ((bmi.toFloat() - 12f) / 28f).coerceIn(0f, 1f) },
+                            color = statusColor,
+                            modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp))
                         )
-                        Text("Category: $category", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        if (hMeters > 0.0) {
+                            Text(
+                                "Healthy Weight Range: ${String.format(Locale.US, "%.1f", idealMin)} – ${String.format(Locale.US, "%.1f", idealMax)} kg",
+                                fontSize = 13.sp
+                            )
+                        }
                     }
                 }
             }
@@ -343,15 +474,26 @@ fun BmiCalculatorScreen(onBack: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StopwatchAndTimerScreen(onBack: () -> Unit) {
+fun StopwatchAndTimerScreen(
+    initialIsTimer: Boolean = false,
+    onBack: () -> Unit
+) {
     BackHandler { onBack() }
+    var isTimerMode by remember { mutableStateOf(initialIsTimer) }
+
+    // Stopwatch
     var elapsedMs by remember { mutableLongStateOf(0L) }
-    var running by remember { mutableStateOf(false) }
+    var swRunning by remember { mutableStateOf(false) }
     val laps = remember { mutableStateListOf<String>() }
 
-    LaunchedEffect(running) {
+    // Countdown Timer
+    var timerTotalSec by remember { mutableLongStateOf(300L) }
+    var timerLeftSec by remember { mutableLongStateOf(300L) }
+    var timerRunning by remember { mutableStateOf(false) }
+
+    LaunchedEffect(swRunning) {
         var lastTick = System.currentTimeMillis()
-        while (running) {
+        while (swRunning) {
             delay(50L)
             val now = System.currentTimeMillis()
             elapsedMs += (now - lastTick)
@@ -359,8 +501,22 @@ fun StopwatchAndTimerScreen(onBack: () -> Unit) {
         }
     }
 
+    LaunchedEffect(timerRunning) {
+        while (timerRunning && timerLeftSec > 0L) {
+            delay(1000L)
+            timerLeftSec--
+            if (timerLeftSec == 0L) {
+                timerRunning = false
+                try {
+                    ToneGenerator(AudioManager.STREAM_ALARM, 85).startTone(ToneGenerator.TONE_PROP_BEEP2, 500)
+                } catch (_: Throwable) {
+                }
+            }
+        }
+    }
+
     fun formatMs(ms: Long): String {
-        val mins = (ms / 60000L)
+        val mins = ms / 60000L
         val secs = (ms % 60000L) / 1000L
         val hundredths = (ms % 1000L) / 10L
         return String.format(Locale.US, "%02d:%02d.%02d", mins, secs, hundredths)
@@ -369,7 +525,7 @@ fun StopwatchAndTimerScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Stopwatch & Timer", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                title = { Text(if (isTimerMode) "Countdown Timer" else "Precision Stopwatch", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.testTag("back_button")) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -381,55 +537,75 @@ fun StopwatchAndTimerScreen(onBack: () -> Unit) {
         bottomBar = { TopBannerAd() }
     ) { padding ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = formatMs(elapsedMs),
-                            fontSize = 42.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(onClick = { running = !running }) {
-                                Text(if (running) "Pause" else "Start")
-                            }
-                            OutlinedButton(
-                                onClick = { if (elapsedMs > 0L) laps.add(0, "Lap ${laps.size + 1}: ${formatMs(elapsedMs)}") },
-                                enabled = elapsedMs > 0L
-                            ) {
-                                Text("Lap")
-                            }
-                            OutlinedButton(onClick = {
-                                running = false
-                                elapsedMs = 0L
-                                laps.clear()
-                            }) {
-                                Text("Reset")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !isTimerMode, onClick = { isTimerMode = false }, label = { Text("Stopwatch") })
+                    FilterChip(selected = isTimerMode, onClick = { isTimerMode = true }, label = { Text("Countdown Timer") })
+                }
+            }
+            if (!isTimerMode) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = formatMs(elapsedMs), fontSize = 42.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Button(onClick = { swRunning = !swRunning }) { Text(if (swRunning) "Pause" else "Start") }
+                                OutlinedButton(
+                                    onClick = { if (elapsedMs > 0L) laps.add(0, "Lap ${laps.size + 1}: ${formatMs(elapsedMs)}") },
+                                    enabled = elapsedMs > 0L
+                                ) { Text("Lap") }
+                                OutlinedButton(onClick = { swRunning = false; elapsedMs = 0L; laps.clear() }) { Text("Reset") }
                             }
                         }
                     }
                 }
-            }
-            items(laps) { lap ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Text(lap, modifier = Modifier.padding(12.dp), fontWeight = FontWeight.Medium)
+                items(laps) { lap ->
+                    Card(modifier = Modifier.fillMaxWidth()) { Text(lap, modifier = Modifier.padding(12.dp), fontWeight = FontWeight.Medium) }
+                }
+            } else {
+                item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("1m" to 60L, "5m" to 300L, "10m" to 600L, "25m" to 1500L).forEach { (label, secs) ->
+                            item {
+                                FilterChip(
+                                    selected = timerTotalSec == secs,
+                                    onClick = { timerRunning = false; timerTotalSec = secs; timerLeftSec = secs },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+                    }
+                }
+                item {
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            val mm = timerLeftSec / 60
+                            val ss = timerLeftSec % 60
+                            Text(
+                                text = String.format(Locale.US, "%02d:%02d", mm, ss),
+                                fontSize = 46.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            LinearProgressIndicator(
+                                progress = { if (timerTotalSec > 0) timerLeftSec.toFloat() / timerTotalSec else 0f },
+                                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Button(onClick = { timerRunning = !timerRunning }, enabled = timerLeftSec > 0) {
+                                    Text(if (timerRunning) "Pause" else "Start Timer")
+                                }
+                                OutlinedButton(onClick = { timerRunning = false; timerLeftSec = timerTotalSec }) { Text("Reset") }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -438,24 +614,59 @@ fun StopwatchAndTimerScreen(onBack: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UnitConverterScreen(onBack: () -> Unit) {
+fun UnitConverterScreen(
+    initialMode: Int = 0, // 0 = Units, 1 = Currency, 2 = World Time Zones
+    onBack: () -> Unit
+) {
     BackHandler { onBack() }
+    var activeTab by remember { mutableIntStateOf(initialMode) }
     var valueText by remember { mutableStateOf("10") }
-    var selectedType by remember { mutableIntStateOf(0) }
-    val types = listOf("Length (m → ft)", "Weight (kg → lb)", "Temp (°C → °F)", "Currency (USD → INR)")
+    var selectedUnitIdx by remember { mutableIntStateOf(0) }
+    val unitTypes = listOf("Length (m → ft)", "Weight (kg → lb)", "Temp (°C → °F)", "Speed (km/h → mph)")
 
     val v = valueText.toDoubleOrNull() ?: 0.0
-    val result = when (selectedType) {
+    val unitResult = when (selectedUnitIdx) {
         0 -> "${String.format(Locale.US, "%.2f", v * 3.28084)} ft"
         1 -> "${String.format(Locale.US, "%.2f", v * 2.20462)} lb"
         2 -> "${String.format(Locale.US, "%.2f", (v * 9.0 / 5.0) + 32.0)} °F"
-        else -> "₹${String.format(Locale.US, "%.2f", v * 84.5)}"
+        else -> "${String.format(Locale.US, "%.2f", v * 0.621371)} mph"
     }
+
+    val usdAmount = valueText.toDoubleOrNull() ?: 1.0
+    val currencies = listOf(
+        "INR (₹)" to usdAmount * 84.5,
+        "EUR (€)" to usdAmount * 0.92,
+        "GBP (£)" to usdAmount * 0.79,
+        "AED (د.إ)" to usdAmount * 3.67,
+        "JPY (¥)" to usdAmount * 154.0,
+        "CAD ($)" to usdAmount * 1.40
+    )
+
+    val zones = listOf(
+        "IST (India)" to "Asia/Kolkata",
+        "UTC (Universal)" to "UTC",
+        "EST (New York)" to "America/New_York",
+        "PST (Los Angeles)" to "America/Los_Angeles",
+        "GMT (London)" to "Europe/London",
+        "GST (Dubai)" to "Asia/Dubai",
+        "JST (Tokyo)" to "Asia/Tokyo"
+    )
+    val nowDate = remember { Date() }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Unit & Currency Converter", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                title = {
+                    Text(
+                        when (activeTab) {
+                            1 -> "Multi-Currency Converter"
+                            2 -> "World Time Zone Clock"
+                            else -> "Universal Unit Converter"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.testTag("back_button")) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -467,47 +678,78 @@ fun UnitConverterScreen(onBack: () -> Unit) {
         bottomBar = { TopBannerAd() }
     ) { padding ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    types.forEachIndexed { idx, label ->
-                        FilterChip(
-                            selected = selectedType == idx,
-                            onClick = { selectedType = idx },
-                            label = { Text(label) }
-                        )
-                    }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = activeTab == 0, onClick = { activeTab = 0 }, label = { Text("Units") })
+                    FilterChip(selected = activeTab == 1, onClick = { activeTab = 1 }, label = { Text("Currency") })
+                    FilterChip(selected = activeTab == 2, onClick = { activeTab = 2 }, label = { Text("Time Zones") })
                 }
             }
-            item {
-                OutlinedTextField(
-                    value = valueText,
-                    onValueChange = { valueText = it.filter { c -> c.isDigit() || c == '.' || c == '-' } },
-                    label = { Text("Input Value") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
-                ) {
-                    Column(modifier = Modifier.padding(18.dp)) {
-                        Text("Converted Output", fontSize = 13.sp)
-                        Text(
-                            text = result,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.primary
+            when (activeTab) {
+                0 -> {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            unitTypes.forEachIndexed { idx, label ->
+                                FilterChip(selected = selectedUnitIdx == idx, onClick = { selectedUnitIdx = idx }, label = { Text(label) })
+                            }
+                        }
+                    }
+                    item {
+                        OutlinedTextField(
+                            value = valueText,
+                            onValueChange = { valueText = it.filter { c -> c.isDigit() || c == '.' || c == '-' } },
+                            label = { Text("Input Value") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
                         )
+                    }
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
+                        ) {
+                            Column(modifier = Modifier.padding(18.dp)) {
+                                Text("Converted Output", fontSize = 13.sp)
+                                Text(text = unitResult, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+                1 -> {
+                    item {
+                        OutlinedTextField(
+                            value = valueText,
+                            onValueChange = { valueText = it.filter { c -> c.isDigit() || c == '.' } },
+                            label = { Text("Amount in USD ($)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    items(currencies) { (code, converted) ->
+                        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(code, fontWeight = FontWeight.Bold)
+                                Text(String.format(Locale.US, "%.2f", converted), fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+                else -> {
+                    items(zones) { (label, tzId) ->
+                        val fmt = SimpleDateFormat("hh:mm a • dd MMM", Locale.US).apply { timeZone = TimeZone.getTimeZone(tzId) }
+                        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(label, fontWeight = FontWeight.Bold)
+                                Text(fmt.format(nowDate), fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
                     }
                 }
             }

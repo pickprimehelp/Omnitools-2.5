@@ -7,16 +7,11 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Rect
-import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.core.content.FileProvider
-import com.example.ui.tools.design.WeddingClipartRenderer
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -46,43 +41,12 @@ object ImageExportUtils {
         }
     }
 
-    private fun enrichWeddingCardBitmapIfNeeded(bitmap: Bitmap, isWeddingCard: Boolean): Bitmap {
-        if (!isWeddingCard) return bitmap
-        try {
-            val mutable = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-            val canvas = Canvas(mutable)
-
-            // 1. Ganpati Bappa Auspicious Header Motif (Top center)
-            val ganpatiBmp = WeddingClipartRenderer.createGanpatiBitmap()
-            val ganpatiDst = Rect(540 - 100, 70, 540 + 100, 70 + 160)
-            canvas.drawBitmap(ganpatiBmp, null, ganpatiDst, Paint(Paint.ANTI_ALIAS_FLAG))
-
-            // 2. Readymade Dulha-Dulhan Clipart (Center)
-            val dulhaDulhanBmp = WeddingClipartRenderer.createDulhaDulhanBitmap()
-            val ddDst = Rect(540 - 190, 310, 540 + 190, 310 + 240)
-            canvas.drawBitmap(dulhaDulhanBmp, null, ddDst, Paint(Paint.ANTI_ALIAS_FLAG))
-
-            // 3. Shehnai & Kalash Clipart (Around Date & Venue)
-            val shehnaiBmp = WeddingClipartRenderer.createShehnaiKalashBitmap()
-            val shehnaiDst = Rect(540 - 200, 1150, 540 + 200, 1150 + 100)
-            canvas.drawBitmap(shehnaiBmp, null, shehnaiDst, Paint(Paint.ANTI_ALIAS_FLAG))
-
-            return mutable
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return bitmap
-        }
-    }
-
     fun shareBitmap(context: Context, bitmap: Bitmap, title: String = "OmniTools Creation") {
-        val isWedding = title.contains("Wedding", ignoreCase = true)
-        val finalBmp = enrichWeddingCardBitmapIfNeeded(bitmap, isWedding)
-
         try {
             val cachePath = File(context.cacheDir, "images").apply { mkdirs() }
             val file = File(cachePath, "omnitools_${System.currentTimeMillis()}.png")
             FileOutputStream(file).use { stream ->
-                finalBmp.compress(Bitmap.CompressFormat.PNG, 100, stream)
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
             }
 
             val contentUri = FileProvider.getUriForFile(
@@ -103,19 +67,38 @@ object ImageExportUtils {
         }
     }
 
-    fun saveBitmapToGallery(context: Context, bitmap: Bitmap, filenamePrefix: String = "OmniTools"): Boolean {
-        val isWedding = filenamePrefix.contains("Wedding", ignoreCase = true)
-        val finalBmp = enrichWeddingCardBitmapIfNeeded(bitmap, isWedding)
-
+    fun saveBitmapToGallery(
+        context: Context,
+        bitmap: Bitmap,
+        filenamePrefix: String = "OmniTools",
+        format: Bitmap.CompressFormat = Bitmap.CompressFormat.PNG,
+        quality: Int = 100
+    ): Boolean {
+        val ext = when {
+            format == Bitmap.CompressFormat.JPEG -> "jpg"
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                (format == Bitmap.CompressFormat.WEBP_LOSSY || format == Bitmap.CompressFormat.WEBP_LOSSLESS) -> "webp"
+            @Suppress("DEPRECATION")
+            format == Bitmap.CompressFormat.WEBP -> "webp"
+            else -> "png"
+        }
+        val mime = when {
+            format == Bitmap.CompressFormat.JPEG -> "image/jpeg"
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                (format == Bitmap.CompressFormat.WEBP_LOSSY || format == Bitmap.CompressFormat.WEBP_LOSSLESS) -> "image/webp"
+            @Suppress("DEPRECATION")
+            format == Bitmap.CompressFormat.WEBP -> "image/webp"
+            else -> "image/png"
+        }
         return try {
-            val filename = "${filenamePrefix}_${System.currentTimeMillis()}.png"
+            val filename = "${filenamePrefix}_${System.currentTimeMillis()}.$ext"
             var fos: OutputStream? = null
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver: ContentResolver = context.contentResolver
                 val contentValues = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                    put(MediaStore.MediaColumns.MIME_TYPE, mime)
                     put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/OmniTools")
                 }
                 val imageUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
@@ -123,6 +106,7 @@ object ImageExportUtils {
                     fos = resolver.openOutputStream(imageUri)
                 }
             } else {
+                @Suppress("DEPRECATION")
                 val imagesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).toString() + "/OmniTools"
                 val file = File(imagesDir).apply { if (!exists()) mkdirs() }
                 val image = File(file, filename)
@@ -132,14 +116,50 @@ object ImageExportUtils {
             if (fos == null) return false
 
             fos.use { out ->
-                finalBmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+                bitmap.compress(format, quality, out)
             }
             Toast.makeText(context, "Saved to Gallery (Pictures/OmniTools)", Toast.LENGTH_SHORT).show()
             true
         } catch (e: Exception) {
             e.printStackTrace()
-            Toast.makeText(context, "Saved locally in app cache", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show()
             false
+        }
+    }
+
+    fun sharePdfFile(context: Context, pdfFile: File, title: String = "Share PDF Document") {
+        try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                pdfFile
+            )
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, title)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, title))
+        } catch (e: Exception) {
+            Toast.makeText(context, "Error sharing PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun openPdfFile(context: Context, pdfFile: File) {
+        try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                pdfFile
+            )
+            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/pdf")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(viewIntent)
+        } catch (e: Exception) {
+            Toast.makeText(context, "No PDF viewer app found", Toast.LENGTH_SHORT).show()
         }
     }
 }

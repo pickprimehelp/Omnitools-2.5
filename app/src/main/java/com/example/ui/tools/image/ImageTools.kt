@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -28,8 +29,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddPhotoAlternate
@@ -44,6 +47,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -67,6 +71,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ads.TopBannerAd
@@ -77,28 +82,39 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.util.Locale
 
-private fun decodeSafeBitmap(context: Context, uri: Uri, maxDim: Int = 1600): Bitmap? {
+private fun decodeSafeBitmap(context: Context, uri: Uri, maxDim: Int = 1800): Bitmap? {
     return try {
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, opts)
-        }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
         var sample = 1
-        while (opts.outWidth / sample > maxDim || opts.outHeight / sample > maxDim) {
-            sample *= 2
-        }
+        while (opts.outWidth / sample > maxDim || opts.outHeight / sample > maxDim) sample *= 2
         val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sample }
-        context.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, decodeOpts)
-        }
+        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOpts) }
     } catch (_: Exception) {
         null
     }
 }
 
-private fun compressBitmap(source: Bitmap, quality: Int): Pair<Bitmap, Int> {
+private enum class ExportImageFormat(val label: String) {
+    JPG("JPG"),
+    PNG("PNG"),
+    WEBP("WEBP")
+}
+
+private fun ExportImageFormat.toCompressFormat(): Bitmap.CompressFormat = when (this) {
+    ExportImageFormat.JPG -> Bitmap.CompressFormat.JPEG
+    ExportImageFormat.PNG -> Bitmap.CompressFormat.PNG
+    ExportImageFormat.WEBP -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Bitmap.CompressFormat.WEBP_LOSSY
+    } else {
+        @Suppress("DEPRECATION")
+        Bitmap.CompressFormat.WEBP
+    }
+}
+
+private fun encodeBitmap(source: Bitmap, quality: Int, format: ExportImageFormat): Pair<Bitmap, Int> {
     val stream = ByteArrayOutputStream()
-    source.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(5, 100), stream)
+    source.compress(format.toCompressFormat(), quality.coerceIn(5, 100), stream)
     val bytes = stream.toByteArray()
     val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: source
     return decoded to (bytes.size / 1024)
@@ -106,40 +122,54 @@ private fun compressBitmap(source: Bitmap, quality: Int): Pair<Bitmap, Int> {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ImageCompressorScreen(onBack: () -> Unit) {
+fun ImageCompressorScreen(
+    initialMode: Int = 0, // 0 = Compress, 1 = Resize, 2 = Format Converter
+    onBack: () -> Unit
+) {
     BackHandler { onBack() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    var activeTab by remember { mutableIntStateOf(initialMode) }
     var sourceBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var compressedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var compressedKb by remember { mutableIntStateOf(0) }
-    var quality by remember { mutableFloatStateOf(65f) }
+    var processedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var outputKb by remember { mutableIntStateOf(0) }
+    var quality by remember { mutableFloatStateOf(70f) }
     var scalePercent by remember { mutableFloatStateOf(100f) }
+    var customWidth by remember { mutableStateOf("1080") }
+    var customHeight by remember { mutableStateOf("1080") }
+    var selectedFormat by remember { mutableStateOf(ExportImageFormat.JPG) }
 
-    fun recompute(bmp: Bitmap?, q: Float, scale: Float) {
+    fun recompute(bmp: Bitmap?, q: Float, scale: Float, fmt: ExportImageFormat, wStr: String, hStr: String, tab: Int) {
         if (bmp == null) return
-        val scaled = if (scale < 99f) {
-            val w = (bmp.width * (scale / 100f)).toInt().coerceAtLeast(32)
-            val h = (bmp.height * (scale / 100f)).toInt().coerceAtLeast(32)
-            Bitmap.createScaledBitmap(bmp, w, h, true)
-        } else {
-            bmp
+        val scaled = when (tab) {
+            1 -> {
+                val tw = (wStr.toIntOrNull() ?: bmp.width).coerceIn(32, 4096)
+                val th = (hStr.toIntOrNull() ?: bmp.height).coerceIn(32, 4096)
+                Bitmap.createScaledBitmap(bmp, tw, th, true)
+            }
+            else -> if (scale < 99f) {
+                val w = (bmp.width * (scale / 100f)).toInt().coerceAtLeast(32)
+                val h = (bmp.height * (scale / 100f)).toInt().coerceAtLeast(32)
+                Bitmap.createScaledBitmap(bmp, w, h, true)
+            } else bmp
         }
-        val (out, kb) = compressBitmap(scaled, q.toInt())
-        compressedBitmap = out
-        compressedKb = kb
+        val (out, kb) = encodeBitmap(scaled, q.toInt(), fmt)
+        processedBitmap = out
+        outputKb = kb
     }
 
-    val picker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             scope.launch(Dispatchers.IO) {
                 val decoded = decodeSafeBitmap(context, uri)
                 withContext(Dispatchers.Main) {
                     sourceBitmap = decoded
-                    recompute(decoded, quality, scalePercent)
+                    if (decoded != null) {
+                        customWidth = decoded.width.toString()
+                        customHeight = decoded.height.toString()
+                        recompute(decoded, quality, scalePercent, selectedFormat, customWidth, customHeight, activeTab)
+                    }
                 }
             }
         }
@@ -148,7 +178,17 @@ fun ImageCompressorScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Image Compressor & Resizer", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                title = {
+                    Text(
+                        when (activeTab) {
+                            1 -> "Image Resizer Studio"
+                            2 -> "JPG ↔ PNG ↔ WEBP Converter"
+                            else -> "Image Compressor Pro"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.testTag("back_button")) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -164,14 +204,19 @@ fun ImageCompressorScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .padding(padding),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = activeTab == 0, onClick = { activeTab = 0 }, label = { Text("Compress") })
+                    FilterChip(selected = activeTab == 1, onClick = { activeTab = 1 }, label = { Text("Resize W×H") })
+                    FilterChip(selected = activeTab == 2, onClick = { activeTab = 2 }, label = { Text("Format Convert") })
+                }
+            }
+            item {
                 Button(
-                    onClick = {
-                        picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    },
-                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -179,12 +224,26 @@ fun ImageCompressorScreen(onBack: () -> Unit) {
                     Text("Pick Photo from Gallery")
                 }
             }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ExportImageFormat.entries.forEach { fmt ->
+                        FilterChip(
+                            selected = selectedFormat == fmt,
+                            onClick = {
+                                selectedFormat = fmt
+                                recompute(sourceBitmap, quality, scalePercent, fmt, customWidth, customHeight, activeTab)
+                            },
+                            label = { Text(fmt.label) }
+                        )
+                    }
+                }
+            }
 
-            if (compressedBitmap != null) {
+            if (processedBitmap != null) {
                 item {
                     Image(
-                        bitmap = compressedBitmap!!.asImageBitmap(),
-                        contentDescription = "Compressed Preview",
+                        bitmap = processedBitmap!!.asImageBitmap(),
+                        contentDescription = "Processed Preview",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -195,31 +254,59 @@ fun ImageCompressorScreen(onBack: () -> Unit) {
                 }
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp)) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
-                                "Output Size: $compressedKb KB • ${compressedBitmap!!.width} × ${compressedBitmap!!.height} px",
+                                "Output: $outputKb KB (${selectedFormat.label}) • ${processedBitmap!!.width} × ${processedBitmap!!.height} px",
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Quality: ${quality.toInt()}%")
-                            Slider(
-                                value = quality,
-                                onValueChange = {
-                                    quality = it
-                                    recompute(sourceBitmap, it, scalePercent)
-                                },
-                                valueRange = 10f..100f
-                            )
-                            Text("Resize Scale: ${scalePercent.toInt()}%")
-                            Slider(
-                                value = scalePercent,
-                                onValueChange = {
-                                    scalePercent = it
-                                    recompute(sourceBitmap, quality, it)
-                                },
-                                valueRange = 25f..100f
-                            )
+                            if (activeTab == 1) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    OutlinedTextField(
+                                        value = customWidth,
+                                        onValueChange = {
+                                            customWidth = it.filter { c -> c.isDigit() }
+                                            recompute(sourceBitmap, quality, scalePercent, selectedFormat, customWidth, customHeight, activeTab)
+                                        },
+                                        label = { Text("Width px") },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    OutlinedTextField(
+                                        value = customHeight,
+                                        onValueChange = {
+                                            customHeight = it.filter { c -> c.isDigit() }
+                                            recompute(sourceBitmap, quality, scalePercent, selectedFormat, customWidth, customHeight, activeTab)
+                                        },
+                                        label = { Text("Height px") },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            } else {
+                                Text("Scale: ${scalePercent.toInt()}%")
+                                Slider(
+                                    value = scalePercent,
+                                    onValueChange = {
+                                        scalePercent = it
+                                        recompute(sourceBitmap, quality, it, selectedFormat, customWidth, customHeight, activeTab)
+                                    },
+                                    valueRange = 25f..100f
+                                )
+                            }
+                            if (selectedFormat != ExportImageFormat.PNG) {
+                                Text("Quality: ${quality.toInt()}%")
+                                Slider(
+                                    value = quality,
+                                    onValueChange = {
+                                        quality = it
+                                        recompute(sourceBitmap, it, scalePercent, selectedFormat, customWidth, customHeight, activeTab)
+                                    },
+                                    valueRange = 10f..100f
+                                )
+                            }
                         }
                     }
                 }
@@ -227,20 +314,24 @@ fun ImageCompressorScreen(onBack: () -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
                             onClick = {
-                                ImageExportUtils.saveBitmapToGallery(context, compressedBitmap!!, "OmniTools_Compressed")
+                                ImageExportUtils.saveBitmapToGallery(
+                                    context,
+                                    processedBitmap!!,
+                                    "OmniTools_${selectedFormat.label}",
+                                    selectedFormat.toCompressFormat(),
+                                    quality.toInt()
+                                )
                             },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Save")
+                            Text("Save ${selectedFormat.label}")
                         }
                         OutlinedButton(
-                            onClick = {
-                                ImageExportUtils.shareBitmap(context, compressedBitmap!!, "Compressed Photo")
-                            },
-                            modifier = Modifier.weight(1f),
+                            onClick = { ImageExportUtils.shareBitmap(context, processedBitmap!!, "Processed Photo") },
+                            modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -256,23 +347,25 @@ fun ImageCompressorScreen(onBack: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PassportPhotoMakerScreen(onBack: () -> Unit) {
+fun PassportPhotoMakerScreen(
+    initialMode: Int = 0, // 0 = Passport Photo Sheet, 1 = Print DPI Size Converter
+    onBack: () -> Unit
+) {
     BackHandler { onBack() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    var activeTab by remember { mutableIntStateOf(initialMode) }
     var photoBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var bgColor by remember { mutableStateOf(Color.White) }
-    val bgChoices = listOf(
-        Color.White,
-        Color(0xFFDBEAFE),
-        Color(0xFF2563EB),
-        Color(0xFFF3F4F6)
-    )
+    var isUsSize by remember { mutableStateOf(false) } // false=35x45mm India, true=2x2" US
 
-    val picker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
+    var dpiPxW by remember { mutableStateOf("1200") }
+    var dpiPxH by remember { mutableStateOf("1800") }
+    var selectedDpi by remember { mutableIntStateOf(300) }
+
+    val bgChoices = listOf(Color.White, Color(0xFFDBEAFE), Color(0xFF2563EB), Color(0xFFF3F4F6))
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             scope.launch(Dispatchers.IO) {
                 val bmp = decodeSafeBitmap(context, uri, 1000)
@@ -281,19 +374,19 @@ fun PassportPhotoMakerScreen(onBack: () -> Unit) {
         }
     }
 
-    fun buildPassportSheet(photo: Bitmap, bgArgb: Int): Bitmap {
+    fun buildPassportSheet(photo: Bitmap, bgArgb: Int, usSquare: Boolean): Bitmap {
         val sheetW = 1200
         val sheetH = 1000
         val sheet = Bitmap.createBitmap(sheetW, sheetH, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(sheet)
         canvas.drawColor(android.graphics.Color.WHITE)
 
-        val cellW = 350
-        val cellH = 450
+        val cellW = if (usSquare) 360 else 340
+        val cellH = if (usSquare) 360 else 437
         val cols = 3
         val rows = 2
-        val gapX = 35
-        val gapY = 35
+        val gapX = 36
+        val gapY = 36
         val startX = (sheetW - (cols * cellW + (cols - 1) * gapX)) / 2
         val startY = (sheetH - (rows * cellH + (rows - 1) * gapY)) / 2
 
@@ -303,7 +396,6 @@ fun PassportPhotoMakerScreen(onBack: () -> Unit) {
             style = Paint.Style.STROKE
             strokeWidth = 3f
         }
-
         for (r in 0 until rows) {
             for (c in 0 until cols) {
                 val left = startX + c * (cellW + gapX)
@@ -317,10 +409,20 @@ fun PassportPhotoMakerScreen(onBack: () -> Unit) {
         return sheet
     }
 
+    val sheet = remember(photoBitmap, bgColor, isUsSize) {
+        photoBitmap?.let { buildPassportSheet(it, bgColor.toArgb(), isUsSize) }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Passport Photo & 6-Sheet", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                title = {
+                    Text(
+                        if (activeTab == 0) "Passport Photo & 6-Sheet" else "Photo Print DPI Converter",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.testTag("back_button")) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -331,9 +433,6 @@ fun PassportPhotoMakerScreen(onBack: () -> Unit) {
         },
         bottomBar = { TopBannerAd() }
     ) { padding ->
-        val sheet = remember(photoBitmap, bgColor) {
-            photoBitmap?.let { buildPassportSheet(it, bgColor.toArgb()) }
-        }
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -342,69 +441,133 @@ fun PassportPhotoMakerScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
-                Button(
-                    onClick = {
-                        picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Select Portrait Photo")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = activeTab == 0, onClick = { activeTab = 0 }, label = { Text("Passport 6-Sheet") })
+                    FilterChip(selected = activeTab == 1, onClick = { activeTab = 1 }, label = { Text("DPI Print Size") })
                 }
             }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Background:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    bgChoices.forEach { color ->
-                        Box(
+            if (activeTab == 0) {
+                item {
+                    Button(
+                        onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Select Portrait Photo")
+                    }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = !isUsSize, onClick = { isUsSize = false }, label = { Text("35×45 mm (India)") })
+                        FilterChip(selected = isUsSize, onClick = { isUsSize = true }, label = { Text("2×2 in (US/Visa)") })
+                    }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Background:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        bgChoices.forEach { color ->
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .border(
+                                        width = if (bgColor == color) 3.dp else 1.dp,
+                                        color = if (bgColor == color) MaterialTheme.colorScheme.primary else Color.Gray,
+                                        shape = CircleShape
+                                    )
+                                    .clickable { bgColor = color }
+                            )
+                        }
+                    }
+                }
+                if (sheet != null) {
+                    item {
+                        Image(
+                            bitmap = sheet.asImageBitmap(),
+                            contentDescription = "6-Photo Passport Print Sheet",
+                            contentScale = ContentScale.Fit,
                             modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                                .border(
-                                    width = if (bgColor == color) 3.dp else 1.dp,
-                                    color = if (bgColor == color) MaterialTheme.colorScheme.primary else Color.Gray,
-                                    shape = CircleShape
-                                )
-                                .clickable { bgColor = color }
+                                .fillMaxWidth()
+                                .height(250.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+                        )
+                    }
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Button(
+                                onClick = { ImageExportUtils.saveBitmapToGallery(context, sheet, "PassportSheet") },
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Save Sheet")
+                            }
+                            OutlinedButton(
+                                onClick = { ImageExportUtils.shareBitmap(context, sheet, "Passport Photo Sheet") },
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Share Sheet")
+                            }
+                        }
+                    }
+                }
+            } else {
+                val pw = dpiPxW.toDoubleOrNull() ?: 0.0
+                val ph = dpiPxH.toDoubleOrNull() ?: 0.0
+                val inW = pw / selectedDpi
+                val inH = ph / selectedDpi
+                val cmW = inW * 2.54
+                val cmH = inH * 2.54
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = dpiPxW,
+                            onValueChange = { dpiPxW = it.filter { c -> c.isDigit() } },
+                            label = { Text("Width (px)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = dpiPxH,
+                            onValueChange = { dpiPxH = it.filter { c -> c.isDigit() } },
+                            label = { Text("Height (px)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
-            }
-            if (sheet != null) {
                 item {
-                    Image(
-                        bitmap = sheet.asImageBitmap(),
-                        contentDescription = "6-Photo Passport Print Sheet",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(260.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(72, 150, 300).forEach { dpi ->
+                            FilterChip(selected = selectedDpi == dpi, onClick = { selectedDpi = dpi }, label = { Text("$dpi DPI") })
+                        }
+                    }
                 }
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = { ImageExportUtils.saveBitmapToGallery(context, sheet, "PassportSheet") },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Save Sheet")
-                        }
-                        OutlinedButton(
-                            onClick = { ImageExportUtils.shareBitmap(context, sheet, "Passport Photo Sheet") },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Share Sheet")
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
+                    ) {
+                        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                "Print Size: ${String.format(Locale.US, "%.2f × %.2f inches", inW, inH)}",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 18.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text("Metric: ${String.format(Locale.US, "%.1f × %.1f cm", cmW, cmH)}")
+                            Text("Millimeters: ${String.format(Locale.US, "%.0f × %.0f mm", cmW * 10, cmH * 10)}")
                         }
                     }
                 }
@@ -415,39 +578,54 @@ fun PassportPhotoMakerScreen(onBack: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ImageQualityCheckerScreen(onBack: () -> Unit) {
+fun ImageQualityCheckerScreen(
+    initialMode: Int = 0, // 0 = Crop & Inspect, 1 = Blur Image Studio
+    onBack: () -> Unit
+) {
     BackHandler { onBack() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    var activeTab by remember { mutableIntStateOf(initialMode) }
     var selectedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var aspectMode by remember { mutableStateOf("Original") }
+    var blurIntensity by remember { mutableFloatStateOf(12f) }
 
-    val picker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             scope.launch(Dispatchers.IO) {
-                val bmp = decodeSafeBitmap(context, uri, 2000)
+                val bmp = decodeSafeBitmap(context, uri, 1600)
                 withContext(Dispatchers.Main) { selectedBitmap = bmp }
             }
         }
     }
 
-    val processedBitmap = remember(selectedBitmap, aspectMode) {
+    val processedBitmap = remember(selectedBitmap, aspectMode, activeTab, blurIntensity) {
         val bmp = selectedBitmap ?: return@remember null
-        when (aspectMode) {
+        val cropped = when (aspectMode) {
             "1:1 Square" -> cropCenterAspect(bmp, 1f)
             "16:9 Wide" -> cropCenterAspect(bmp, 16f / 9f)
             "4:5 Portrait" -> cropCenterAspect(bmp, 4f / 5f)
+            "9:16 Story" -> cropCenterAspect(bmp, 9f / 16f)
             else -> bmp
+        }
+        if (activeTab == 1 && blurIntensity > 1f) {
+            fastDownscaleBlur(cropped, blurIntensity.toInt())
+        } else {
+            cropped
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Image Crop & Quality Inspector", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                title = {
+                    Text(
+                        if (activeTab == 1) "Blur Image Studio" else "Crop & Quality Inspector",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.testTag("back_button")) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -463,43 +641,53 @@ fun ImageQualityCheckerScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .padding(padding),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = activeTab == 0, onClick = { activeTab = 0 }, label = { Text("Crop & Quality") })
+                    FilterChip(selected = activeTab == 1, onClick = { activeTab = 1 }, label = { Text("Blur Filter") })
+                }
+            }
+            item {
                 Button(
-                    onClick = {
-                        picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    },
-                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Pick Image to Inspect / Crop")
+                    Text("Pick Image from Gallery")
                 }
             }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Original", "1:1 Square", "16:9 Wide", "4:5 Portrait").forEach { mode ->
-                        FilterChip(
-                            selected = aspectMode == mode,
-                            onClick = { aspectMode = mode },
-                            label = { Text(mode, fontSize = 11.sp) }
-                        )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val modes = listOf("Original", "1:1 Square", "4:5 Portrait", "16:9 Wide", "9:16 Story")
+                    items(modes.size) { idx ->
+                        val mode = modes[idx]
+                        FilterChip(selected = aspectMode == mode, onClick = { aspectMode = mode }, label = { Text(mode, fontSize = 11.sp) })
+                    }
+                }
+            }
+            if (activeTab == 1 && selectedBitmap != null) {
+                item {
+                    Column {
+                        Text("Blur Intensity: ${blurIntensity.toInt()}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Slider(value = blurIntensity, onValueChange = { blurIntensity = it }, valueRange = 2f..36f)
                     }
                 }
             }
             if (processedBitmap != null) {
                 val mp = (processedBitmap.width * processedBitmap.height) / 1_000_000.0
                 val rating = when {
-                    processedBitmap.width >= 1080 && processedBitmap.height >= 1080 -> "HD Print Ready (300 DPI up to 4x6\")"
+                    processedBitmap.width >= 1080 && processedBitmap.height >= 1080 -> "HD Print Ready (300 DPI)"
                     processedBitmap.width >= 720 -> "Good for Social Media & Web"
-                    else -> "Low Resolution (Best for Icons/Web)"
+                    else -> "Low Resolution (Icons / Thumbnails)"
                 }
                 item {
                     Image(
                         bitmap = processedBitmap.asImageBitmap(),
-                        contentDescription = "Inspected Image",
+                        contentDescription = "Processed Image",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -520,8 +708,8 @@ fun ImageQualityCheckerScreen(onBack: () -> Unit) {
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
-                            onClick = { ImageExportUtils.saveBitmapToGallery(context, processedBitmap, "OmniTools_Crop") },
-                            modifier = Modifier.weight(1f),
+                            onClick = { ImageExportUtils.saveBitmapToGallery(context, processedBitmap, "OmniTools_Image") },
+                            modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -530,7 +718,7 @@ fun ImageQualityCheckerScreen(onBack: () -> Unit) {
                         }
                         OutlinedButton(
                             onClick = { ImageExportUtils.shareBitmap(context, processedBitmap, "OmniTools Image") },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -542,6 +730,14 @@ fun ImageQualityCheckerScreen(onBack: () -> Unit) {
             }
         }
     }
+}
+
+private fun fastDownscaleBlur(src: Bitmap, radius: Int): Bitmap {
+    val factor = radius.coerceIn(2, 36)
+    val smallW = (src.width / factor).coerceAtLeast(16)
+    val smallH = (src.height / factor).coerceAtLeast(16)
+    val down = Bitmap.createScaledBitmap(src, smallW, smallH, true)
+    return Bitmap.createScaledBitmap(down, src.width, src.height, true)
 }
 
 private fun cropCenterAspect(src: Bitmap, targetAspect: Float): Bitmap {
