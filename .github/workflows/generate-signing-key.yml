@@ -1,0 +1,45 @@
+name: One-Time Generate Upload Key
+
+on:
+  workflow_dispatch:
+    inputs:
+      keystore_password:
+        description: 'Enter a new password (min 6 characters - save & remember it!)'
+        required: true
+        type: string
+
+jobs:
+  generate-key:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Keystore, PEM Certificate & Base64
+        env:
+          PASS: ${{ inputs.keystore_password }}
+        run: |
+          echo "::add-mask::$PASS"
+          if [ ${#PASS} -lt 6 ]; then
+            echo "Error: Password must be at least 6 characters."
+            exit 1
+          fi
+          mkdir -p key-output
+          keytool -genkeypair -v \
+            -keystore key-output/upload-keystore.jks \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias upload \
+            -dname "CN=OmniTools, O=OmniTools, C=IN" \
+            -storepass:env PASS \
+            -keypass:env PASS
+          keytool -exportcert -rfc \
+            -keystore key-output/upload-keystore.jks \
+            -alias upload \
+            -storepass:env PASS \
+            -file key-output/upload_certificate.pem
+          base64 -w 0 key-output/upload-keystore.jks > key-output/keystore_base64.txt
+          echo "Success: upload-keystore.jks, upload_certificate.pem, and keystore_base64.txt created."
+
+      - name: Upload Temporary Key Files (Delete Run After Saving Secrets)
+        uses: actions/upload-artifact@v4
+        with:
+          name: temp-upload-key-files
+          path: key-output/
+          retention-days: 1

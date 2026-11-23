@@ -33,7 +33,7 @@ jobs:
       - name: Build Release AAB
         run: ./gradlew bundleRelease
 
-      - name: Sign Release AAB (for Google Play Console)
+      - name: Sign Release AAB and Export PEM Certificate
         env:
           UPLOAD_KEYSTORE_BASE64: ${{ secrets.UPLOAD_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 || secrets.SIGNING_KEY }}
           UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.KEY_STORE_PASSWORD }}
@@ -50,9 +50,14 @@ jobs:
               -keypass "$UPLOAD_KEY_PASSWORD" \
               "$AAB_PATH" "$UPLOAD_KEY_ALIAS"
             jarsigner -verify -strict "$AAB_PATH"
-            echo "Release AAB signed and verified successfully."
+            keytool -exportcert -rfc \
+              -keystore /tmp/upload-keystore.jks \
+              -storepass "$UPLOAD_KEYSTORE_PASSWORD" \
+              -alias "$UPLOAD_KEY_ALIAS" \
+              -file upload_certificate.pem
+            echo "Release AAB signed and upload_certificate.pem exported successfully."
           else
-            echo "::warning::No signing keystore secrets found in GitHub Repository Secrets. Add UPLOAD_KEYSTORE_BASE64, UPLOAD_KEYSTORE_PASSWORD, UPLOAD_KEY_ALIAS, and UPLOAD_KEY_PASSWORD (or KEYSTORE_BASE64 / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD) so app-release.aab is signed for Play Console."
+            echo "::warning::No signing keystore secrets found in GitHub Repository Secrets. Add UPLOAD_KEYSTORE_BASE64, UPLOAD_KEYSTORE_PASSWORD, UPLOAD_KEY_ALIAS, and UPLOAD_KEY_PASSWORD so app-release.aab is signed and upload_certificate.pem is exported."
           fi
 
       - name: Upload Debug APK
@@ -66,3 +71,10 @@ jobs:
         with:
           name: OmniTools-release-aab
           path: app/build/outputs/bundle/release/app-release.aab
+
+      - name: Upload Play Store Certificate (.pem)
+        uses: actions/upload-artifact@v4
+        with:
+          name: playstore-upload-certificate
+          path: upload_certificate.pem
+          if-no-files-found: ignore
