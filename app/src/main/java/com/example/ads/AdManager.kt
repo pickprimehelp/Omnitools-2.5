@@ -33,7 +33,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.aistudio.omnitools.xkrvp.BuildConfig
 import com.google.android.gms.ads.AdError
 import com.google.android.gms.ads.AdListener
 import com.google.android.gms.ads.AdRequest
@@ -42,7 +41,6 @@ import com.google.android.gms.ads.AdView
 import com.google.android.gms.ads.FullScreenContentCallback
 import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.MobileAds
-import com.google.android.gms.ads.RequestConfiguration
 import com.google.android.gms.ads.interstitial.InterstitialAd
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.google.android.gms.ads.rewarded.RewardedAd
@@ -67,24 +65,10 @@ object AdManager {
 
     const val APP_ID = "ca-app-pub-7584087725069099~5449667520"
 
-    // Real Production AdMob Ad Unit IDs (used automatically in Release APK/AAB when !BuildConfig.DEBUG)
-    private const val PROD_BANNER_ID = "ca-app-pub-7584087725069099/8487278849"
-    private const val PROD_INTERSTITIAL_ID = "ca-app-pub-7584087725069099/7969559042"
-    private const val PROD_REWARDED_ID = "ca-app-pub-7584087725069099/3640752672"
-
-    // Google Official Test Ad Unit IDs (used automatically in Debug APK to keep AdMob account 100% safe)
-    private const val TEST_BANNER_ID = "ca-app-pub-3940256099942544/6300978111"
-    private const val TEST_INTERSTITIAL_ID = "ca-app-pub-3940256099942544/1033173712"
-    private const val TEST_REWARDED_ID = "ca-app-pub-3940256099942544/5224354917"
-
-    val BANNER_ID: String
-        get() = if (BuildConfig.DEBUG) TEST_BANNER_ID else PROD_BANNER_ID
-
-    val INTERSTITIAL_ID: String
-        get() = if (BuildConfig.DEBUG) TEST_INTERSTITIAL_ID else PROD_INTERSTITIAL_ID
-
-    val REWARDED_ID: String
-        get() = if (BuildConfig.DEBUG) TEST_REWARDED_ID else PROD_REWARDED_ID
+    // Real Production AdMob Ad Unit IDs (active in both Debug APK and Release AAB)
+    const val BANNER_ID = "ca-app-pub-7584087725069099/8487278849"
+    const val INTERSTITIAL_ID = "ca-app-pub-7584087725069099/7969559042"
+    const val REWARDED_ID = "ca-app-pub-7584087725069099/3640752672"
 
     private val handler = Handler(Looper.getMainLooper())
     private val initScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -138,17 +122,11 @@ object AdManager {
 
         initScope.launch {
             try {
-                if (BuildConfig.DEBUG) {
-                    val config = RequestConfiguration.Builder()
-                        .setTestDeviceIds(listOf(AdRequest.DEVICE_ID_EMULATOR))
-                        .build()
-                    MobileAds.setRequestConfiguration(config)
-                }
                 MobileAds.initialize(safeContext) { initStatus ->
                     runOnMain {
                         initializing = false
                         _isInitialized.value = true
-                        Log.d(TAG, "AdMob initialized (debug=${BuildConfig.DEBUG}): ${initStatus.adapterStatusMap.keys}")
+                        Log.d(TAG, "AdMob initialized: ${initStatus.adapterStatusMap.keys}")
                         preloadInterstitial(safeContext)
                         preloadRewarded(safeContext)
                     }
@@ -184,7 +162,7 @@ object AdManager {
                             interstitialAd = ad
                             interstitialLoading = false
                             interstitialRetries = 0
-                            Log.d(TAG, "Interstitial preloaded (debug=${BuildConfig.DEBUG})")
+                            Log.d(TAG, "Interstitial preloaded")
                         }
 
                         override fun onAdFailedToLoad(error: LoadAdError) {
@@ -442,7 +420,7 @@ private class BannerAdHolder(context: Context) {
                 pendingRetry?.let { handler.removeCallbacks(it) }
                 pendingRetry = null
                 container.visibility = View.VISIBLE
-                Log.d("TopBannerAd", "Banner loaded (debug=${BuildConfig.DEBUG})")
+                Log.d("TopBannerAd", "Banner loaded")
             }
 
             override fun onAdFailedToLoad(error: LoadAdError) {

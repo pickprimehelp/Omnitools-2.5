@@ -26,8 +26,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
@@ -87,7 +89,11 @@ import com.example.ui.theme.VioletSecondary
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onSelectTool: (String) -> Unit) {
+fun HomeScreen(
+    isDarkTheme: Boolean = false,
+    onToggleTheme: () -> Unit = {},
+    onSelectTool: (String) -> Unit
+) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
 
@@ -192,17 +198,18 @@ fun HomeScreen(onSelectTool: (String) -> Unit) {
                             Icon(Icons.Default.Search, contentDescription = "Search Tools")
                         }
                     }
-                    IconButton(onClick = { shareApp(context) }, modifier = Modifier.testTag("share_app_button")) {
-                        Icon(Icons.Default.Share, contentDescription = "Share App", tint = MaterialTheme.colorScheme.primary)
+                    IconButton(onClick = onToggleTheme, modifier = Modifier.testTag("theme_toggle_button")) {
+                        Icon(
+                            imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                            contentDescription = if (isDarkTheme) "Switch to Light Theme" else "Switch to Dark Theme",
+                            tint = if (isDarkTheme) GoldAccent else MaterialTheme.colorScheme.primary
+                        )
                     }
                     IconButton(onClick = { showRatingDialog = true }, modifier = Modifier.testTag("rate_app_button")) {
                         Icon(Icons.Default.Star, contentDescription = "Rate App", tint = GoldAccent)
                     }
-                    IconButton(onClick = { showPrivacyDialog = true }, modifier = Modifier.testTag("privacy_button")) {
-                        Icon(Icons.Default.Security, contentDescription = "Privacy Policy", tint = MaterialTheme.colorScheme.primary)
-                    }
                     IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.testTag("about_button")) {
-                        Icon(Icons.Default.Info, contentDescription = "About App")
+                        Icon(Icons.Default.Info, contentDescription = "About, Share & Privacy")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)

@@ -33,6 +33,28 @@ jobs:
       - name: Build Release AAB
         run: ./gradlew bundleRelease
 
+      - name: Sign Release AAB (for Google Play Console)
+        env:
+          UPLOAD_KEYSTORE_BASE64: ${{ secrets.UPLOAD_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 || secrets.SIGNING_KEY }}
+          UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD || secrets.KEY_STORE_PASSWORD }}
+          UPLOAD_KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS || secrets.KEY_ALIAS || secrets.ALIAS }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+        run: |
+          AAB_PATH="app/build/outputs/bundle/release/app-release.aab"
+          if [ -n "$UPLOAD_KEYSTORE_BASE64" ] && [ -n "$UPLOAD_KEYSTORE_PASSWORD" ] && [ -n "$UPLOAD_KEY_ALIAS" ] && [ -n "$UPLOAD_KEY_PASSWORD" ]; then
+            echo "$UPLOAD_KEYSTORE_BASE64" | tr -d '\n\r ' | base64 --decode > /tmp/upload-keystore.jks
+            trap 'rm -f /tmp/upload-keystore.jks' EXIT
+            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+              -keystore /tmp/upload-keystore.jks \
+              -storepass "$UPLOAD_KEYSTORE_PASSWORD" \
+              -keypass "$UPLOAD_KEY_PASSWORD" \
+              "$AAB_PATH" "$UPLOAD_KEY_ALIAS"
+            jarsigner -verify -strict "$AAB_PATH"
+            echo "Release AAB signed and verified successfully."
+          else
+            echo "::warning::No signing keystore secrets found in GitHub Repository Secrets. Add UPLOAD_KEYSTORE_BASE64, UPLOAD_KEYSTORE_PASSWORD, UPLOAD_KEY_ALIAS, and UPLOAD_KEY_PASSWORD (or KEYSTORE_BASE64 / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD) so app-release.aab is signed for Play Console."
+          fi
+
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:

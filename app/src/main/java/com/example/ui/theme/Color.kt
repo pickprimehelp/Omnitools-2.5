@@ -11,13 +11,13 @@ val RoseAccent = Color(0xFFF43F5E)
 val GoldAccent = Color(0xFFF59E0B)
 val EmeraldSuccess = Color(0xFF10B981)
 
-// Dark Studio Surfaces
-val SlateBgDark = Color(0xFF090D16)
-val SlateSurfaceDark = Color(0xFF111827)
-val SlateCardDark = Color(0xFF1A2234)
-val SlateBorderDark = Color(0xFF2B3548)
+// Dark Studio Surfaces (Rich Midnight Navy)
+val SlateBgDark = Color(0xFF0F172A)
+val SlateSurfaceDark = Color(0xFF162032)
+val SlateCardDark = Color(0xFF1E293B)
+val SlateBorderDark = Color(0xFF334155)
 val TextPrimaryDark = Color(0xFFF8FAFC)
-val TextSecondaryDark = Color(0xFF94A3B8)
+val TextSecondaryDark = Color(0xFFCBD5E1)
 
 // Light Studio Surfaces
 val SlateBgLight = Color(0xFFF5F7FB)

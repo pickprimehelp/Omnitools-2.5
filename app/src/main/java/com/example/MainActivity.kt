@@ -1,10 +1,14 @@
 package com.example
 
+import android.content.Context
+import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,23 +48,47 @@ import com.example.ui.tools.voice.VoiceChangerScreen
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        val prefs = getSharedPreferences("omnitools_prefs", Context.MODE_PRIVATE)
+        val initialDark = prefs.getBoolean("is_dark_theme", false)
         AdManager.initialize(applicationContext)
         setContent {
-            MyApplicationTheme {
-                OmniToolsApp()
+            var isDarkTheme by remember { mutableStateOf(initialDark) }
+            SideEffect {
+                val barStyle = if (isDarkTheme) {
+                    SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+                } else {
+                    SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+                }
+                enableEdgeToEdge(statusBarStyle = barStyle, navigationBarStyle = barStyle)
+            }
+            MyApplicationTheme(darkTheme = isDarkTheme) {
+                OmniToolsApp(
+                    isDarkTheme = isDarkTheme,
+                    onToggleTheme = {
+                        val next = !isDarkTheme
+                        isDarkTheme = next
+                        prefs.edit().putBoolean("is_dark_theme", next).apply()
+                    }
+                )
             }
         }
     }
 }
 
 @Composable
-fun OmniToolsApp() {
+fun OmniToolsApp(
+    isDarkTheme: Boolean,
+    onToggleTheme: () -> Unit
+) {
     var activeToolId by remember { mutableStateOf<String?>(null) }
     val goBack: () -> Unit = { activeToolId = null }
 
     when (activeToolId) {
-        null -> HomeScreen(onSelectTool = { toolId -> activeToolId = toolId })
+        null -> HomeScreen(
+            isDarkTheme = isDarkTheme,
+            onToggleTheme = onToggleTheme,
+            onSelectTool = { toolId -> activeToolId = toolId }
+        )
 
         // Design & Cards
         "wedding_card" -> WeddingCardMakerScreen(onBack = goBack)
@@ -125,6 +153,10 @@ fun OmniToolsApp() {
         "currency_converter" -> UnitConverterScreen(initialMode = 1, onBack = goBack)
         "timezone_converter" -> UnitConverterScreen(initialMode = 2, onBack = goBack)
 
-        else -> HomeScreen(onSelectTool = { toolId -> activeToolId = toolId })
+        else -> HomeScreen(
+            isDarkTheme = isDarkTheme,
+            onToggleTheme = onToggleTheme,
+            onSelectTool = { toolId -> activeToolId = toolId }
+        )
     }
 }
