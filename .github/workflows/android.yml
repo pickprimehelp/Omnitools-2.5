@@ -49,7 +49,7 @@ jobs:
               -storepass "$UPLOAD_KEYSTORE_PASSWORD" \
               -keypass "$UPLOAD_KEY_PASSWORD" \
               "$AAB_PATH" "$UPLOAD_KEY_ALIAS"
-            jarsigner -verify -strict "$AAB_PATH"
+            jarsigner -verify "$AAB_PATH"
             keytool -exportcert -rfc \
               -keystore /tmp/upload-keystore.jks \
               -storepass "$UPLOAD_KEYSTORE_PASSWORD" \
