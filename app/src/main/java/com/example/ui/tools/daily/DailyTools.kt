@@ -67,6 +67,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ads.TopBannerAd
+import com.example.ui.components.WatermarkExportBar
 import com.example.util.BarcodeQrUtils
 import com.example.util.ImageExportUtils
 import kotlinx.coroutines.delay
@@ -88,6 +89,7 @@ fun QrCodeGeneratorScreen(
     var inputText by remember { mutableStateOf("https://play.google.com") }
     var isBarcode by remember { mutableStateOf(initialIsBarcode) }
     var qrColorIndex by remember { mutableIntStateOf(0) }
+    var hasWatermark by remember { mutableStateOf(true) }
 
     val qrColors = listOf(Color.Black, Color(0xFF4338CA), Color(0xFF047857), Color(0xFFB91C1C))
     val qrTemplates = listOf(
@@ -103,6 +105,9 @@ fun QrCodeGeneratorScreen(
         } else {
             BarcodeQrUtils.generateQrBitmap(inputText, foregroundColor = qrColors[qrColorIndex].toArgb())
         }
+    }
+    val displayBitmap: Bitmap? = remember(bitmap, hasWatermark) {
+        bitmap?.let { if (hasWatermark) ImageExportUtils.applyFooterWatermark(it) else it }
     }
 
     Scaffold(
@@ -177,9 +182,9 @@ fun QrCodeGeneratorScreen(
                         .padding(20.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (bitmap != null) {
+                    if (displayBitmap != null) {
                         Image(
-                            bitmap = bitmap.asImageBitmap(),
+                            bitmap = displayBitmap.asImageBitmap(),
                             contentDescription = if (isBarcode) "Generated Barcode" else "Generated QR Code",
                             modifier = Modifier.size(if (isBarcode) 260.dp else 220.dp)
                         )
@@ -190,26 +195,22 @@ fun QrCodeGeneratorScreen(
             }
             if (bitmap != null) {
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = { ImageExportUtils.saveBitmapToGallery(context, bitmap, "OmniTools_Code") },
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Save")
-                        }
-                        OutlinedButton(
-                            onClick = { ImageExportUtils.shareBitmap(context, bitmap, "OmniTools QR Code") },
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Share")
-                        }
-                    }
+                    WatermarkExportBar(
+                        hasWatermark = hasWatermark,
+                        onWatermarkUnlocked = { hasWatermark = false },
+                        onExportSave = { includeWm ->
+                            val outBmp = if (includeWm) ImageExportUtils.applyFooterWatermark(bitmap) else bitmap
+                            ImageExportUtils.saveBitmapToGallery(context, outBmp, "OmniTools_Code")
+                        },
+                        onExportShare = { includeWm ->
+                            val outBmp = if (includeWm) ImageExportUtils.applyFooterWatermark(bitmap) else bitmap
+                            ImageExportUtils.shareBitmap(context, outBmp, "OmniTools QR Code")
+                        },
+                        saveLabel = "Save",
+                        shareLabel = "Share",
+                        saveTestTag = "save_qr_code",
+                        shareTestTag = "share_qr_code"
+                    )
                 }
             }
         }

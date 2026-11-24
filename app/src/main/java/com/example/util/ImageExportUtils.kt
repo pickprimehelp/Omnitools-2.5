@@ -7,6 +7,11 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -17,6 +22,70 @@ import java.io.FileOutputStream
 import java.io.OutputStream
 
 object ImageExportUtils {
+
+    fun applyCornerWatermark(source: Bitmap, label: String = "Made with OmniTools"): Bitmap {
+        val out = source.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(out)
+        val minDim = minOf(out.width, out.height).coerceAtLeast(320)
+        val textSizePx = (minDim * 0.036f).coerceIn(18f, 44f)
+        val padH = textSizePx * 0.75f
+        val padV = textSizePx * 0.42f
+        val margin = (minDim * 0.032f).coerceAtLeast(14f)
+
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = textSizePx
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val textWidth = textPaint.measureText(label)
+        val boxW = textWidth + padH * 2f
+        val boxH = textSizePx + padV * 2f
+        val left = (out.width - boxW - margin).coerceAtLeast(8f)
+        val top = (out.height - boxH - margin).coerceAtLeast(8f)
+        val rect = RectF(left, top, left + boxW, top + boxH)
+
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(170, 15, 23, 42)
+        }
+        canvas.drawRoundRect(rect, boxH / 2f, boxH / 2f, bgPaint)
+
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(120, 255, 255, 255)
+            style = Paint.Style.STROKE
+            strokeWidth = (textSizePx * 0.08f).coerceAtLeast(1.5f)
+        }
+        canvas.drawRoundRect(rect, boxH / 2f, boxH / 2f, borderPaint)
+
+        val fm = textPaint.fontMetrics
+        val baselineY = rect.centerY() - (fm.ascent + fm.descent) / 2f
+        canvas.drawText(label, left + padH, baselineY, textPaint)
+        return out
+    }
+
+    fun applyFooterWatermark(source: Bitmap, label: String = "Made with OmniTools"): Bitmap {
+        val stripHeight = (source.height * 0.11f).toInt().coerceIn(44, 96)
+        val out = Bitmap.createBitmap(source.width, source.height + stripHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawColor(Color.WHITE)
+        canvas.drawBitmap(source, 0f, 0f, null)
+
+        val linePaint = Paint().apply {
+            color = Color.rgb(226, 232, 240)
+            strokeWidth = 2f
+        }
+        canvas.drawLine(0f, source.height.toFloat(), out.width.toFloat(), source.height.toFloat(), linePaint)
+
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(71, 85, 105)
+            textSize = (stripHeight * 0.42f).coerceIn(18f, 32f)
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val fm = textPaint.fontMetrics
+        val centerY = source.height + stripHeight / 2f - (fm.ascent + fm.descent) / 2f
+        canvas.drawText(label, out.width / 2f, centerY, textPaint)
+        return out
+    }
 
     fun copyToClipboard(context: Context, text: String, label: String = "OmniTools") {
         try {

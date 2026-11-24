@@ -75,6 +75,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ads.TopBannerAd
+import com.example.ui.components.WatermarkExportBar
 import com.example.util.ImageExportUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -139,6 +140,7 @@ fun ImageCompressorScreen(
     var customWidth by remember { mutableStateOf("1080") }
     var customHeight by remember { mutableStateOf("1080") }
     var selectedFormat by remember { mutableStateOf(ExportImageFormat.JPG) }
+    var hasWatermark by remember { mutableStateOf(true) }
 
     fun recompute(bmp: Bitmap?, q: Float, scale: Float, fmt: ExportImageFormat, wStr: String, hStr: String, tab: Int) {
         if (bmp == null) return
@@ -241,8 +243,12 @@ fun ImageCompressorScreen(
 
             if (processedBitmap != null) {
                 item {
+                    val previewDisplayBitmap = remember(processedBitmap, hasWatermark) {
+                        val bmp = processedBitmap!!
+                        if (hasWatermark) ImageExportUtils.applyCornerWatermark(bmp) else bmp
+                    }
                     Image(
-                        bitmap = processedBitmap!!.asImageBitmap(),
+                        bitmap = previewDisplayBitmap.asImageBitmap(),
                         contentDescription = "Processed Preview",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
@@ -311,34 +317,30 @@ fun ImageCompressorScreen(
                     }
                 }
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = {
-                                ImageExportUtils.saveBitmapToGallery(
-                                    context,
-                                    processedBitmap!!,
-                                    "OmniTools_${selectedFormat.label}",
-                                    selectedFormat.toCompressFormat(),
-                                    quality.toInt()
-                                )
-                            },
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Save ${selectedFormat.label}")
-                        }
-                        OutlinedButton(
-                            onClick = { ImageExportUtils.shareBitmap(context, processedBitmap!!, "Processed Photo") },
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Share")
-                        }
-                    }
+                    WatermarkExportBar(
+                        hasWatermark = hasWatermark,
+                        onWatermarkUnlocked = { hasWatermark = false },
+                        onExportSave = { includeWm ->
+                            val bmp = processedBitmap!!
+                            val outBmp = if (includeWm) ImageExportUtils.applyCornerWatermark(bmp) else bmp
+                            ImageExportUtils.saveBitmapToGallery(
+                                context,
+                                outBmp,
+                                "OmniTools_${selectedFormat.label}",
+                                selectedFormat.toCompressFormat(),
+                                quality.toInt()
+                            )
+                        },
+                        onExportShare = { includeWm ->
+                            val bmp = processedBitmap!!
+                            val outBmp = if (includeWm) ImageExportUtils.applyCornerWatermark(bmp) else bmp
+                            ImageExportUtils.shareBitmap(context, outBmp, "Processed Photo")
+                        },
+                        saveLabel = "Save ${selectedFormat.label}",
+                        shareLabel = "Share",
+                        saveTestTag = "save_compressed_image",
+                        shareTestTag = "share_compressed_image"
+                    )
                 }
             }
         }
@@ -359,6 +361,7 @@ fun PassportPhotoMakerScreen(
     var photoBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var bgColor by remember { mutableStateOf(Color.White) }
     var isUsSize by remember { mutableStateOf(false) } // false=35x45mm India, true=2x2" US
+    var hasWatermark by remember { mutableStateOf(true) }
 
     var dpiPxW by remember { mutableStateOf("1200") }
     var dpiPxH by remember { mutableStateOf("1800") }
@@ -374,7 +377,7 @@ fun PassportPhotoMakerScreen(
         }
     }
 
-    fun buildPassportSheet(photo: Bitmap, bgArgb: Int, usSquare: Boolean): Bitmap {
+    fun buildPassportSheet(photo: Bitmap, bgArgb: Int, usSquare: Boolean, includeWatermark: Boolean): Bitmap {
         val sheetW = 1200
         val sheetH = 1000
         val sheet = Bitmap.createBitmap(sheetW, sheetH, Bitmap.Config.ARGB_8888)
@@ -406,11 +409,19 @@ fun PassportPhotoMakerScreen(
                 canvas.drawRect(rect, borderPaint)
             }
         }
+        if (includeWatermark) {
+            val wmPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = android.graphics.Color.rgb(100, 116, 139)
+                textSize = 24f
+                textAlign = Paint.Align.CENTER
+            }
+            canvas.drawText("Made with OmniTools Studio", sheetW / 2f, sheetH - 12f, wmPaint)
+        }
         return sheet
     }
 
-    val sheet = remember(photoBitmap, bgColor, isUsSize) {
-        photoBitmap?.let { buildPassportSheet(it, bgColor.toArgb(), isUsSize) }
+    val sheet = remember(photoBitmap, bgColor, isUsSize, hasWatermark) {
+        photoBitmap?.let { buildPassportSheet(it, bgColor.toArgb(), isUsSize, hasWatermark) }
     }
 
     Scaffold(
@@ -497,26 +508,26 @@ fun PassportPhotoMakerScreen(
                         )
                     }
                     item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(
-                                onClick = { ImageExportUtils.saveBitmapToGallery(context, sheet, "PassportSheet") },
-                                modifier = Modifier.weight(1f).height(48.dp),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Save Sheet")
-                            }
-                            OutlinedButton(
-                                onClick = { ImageExportUtils.shareBitmap(context, sheet, "Passport Photo Sheet") },
-                                modifier = Modifier.weight(1f).height(48.dp),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Share Sheet")
-                            }
-                        }
+                        WatermarkExportBar(
+                            hasWatermark = hasWatermark,
+                            onWatermarkUnlocked = { hasWatermark = false },
+                            onExportSave = { includeWm ->
+                                photoBitmap?.let { src ->
+                                    val exportSheet = buildPassportSheet(src, bgColor.toArgb(), isUsSize, includeWm)
+                                    ImageExportUtils.saveBitmapToGallery(context, exportSheet, "PassportSheet")
+                                }
+                            },
+                            onExportShare = { includeWm ->
+                                photoBitmap?.let { src ->
+                                    val exportSheet = buildPassportSheet(src, bgColor.toArgb(), isUsSize, includeWm)
+                                    ImageExportUtils.shareBitmap(context, exportSheet, "Passport Photo Sheet")
+                                }
+                            },
+                            saveLabel = "Save Sheet",
+                            shareLabel = "Share Sheet",
+                            saveTestTag = "save_passport_sheet",
+                            shareTestTag = "share_passport_sheet"
+                        )
                     }
                 }
             } else {
@@ -590,6 +601,7 @@ fun ImageQualityCheckerScreen(
     var selectedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var aspectMode by remember { mutableStateOf("Original") }
     var blurIntensity by remember { mutableFloatStateOf(12f) }
+    var hasWatermark by remember { mutableStateOf(true) }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
@@ -685,8 +697,11 @@ fun ImageQualityCheckerScreen(
                     else -> "Low Resolution (Icons / Thumbnails)"
                 }
                 item {
+                    val previewDisplay = remember(processedBitmap, hasWatermark) {
+                        if (hasWatermark) ImageExportUtils.applyCornerWatermark(processedBitmap) else processedBitmap
+                    }
                     Image(
-                        bitmap = processedBitmap.asImageBitmap(),
+                        bitmap = previewDisplay.asImageBitmap(),
                         contentDescription = "Processed Image",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
@@ -706,26 +721,22 @@ fun ImageQualityCheckerScreen(
                     }
                 }
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = { ImageExportUtils.saveBitmapToGallery(context, processedBitmap, "OmniTools_Image") },
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Save")
-                        }
-                        OutlinedButton(
-                            onClick = { ImageExportUtils.shareBitmap(context, processedBitmap, "OmniTools Image") },
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Share")
-                        }
-                    }
+                    WatermarkExportBar(
+                        hasWatermark = hasWatermark,
+                        onWatermarkUnlocked = { hasWatermark = false },
+                        onExportSave = { includeWm ->
+                            val outBmp = if (includeWm) ImageExportUtils.applyCornerWatermark(processedBitmap) else processedBitmap
+                            ImageExportUtils.saveBitmapToGallery(context, outBmp, "OmniTools_Image")
+                        },
+                        onExportShare = { includeWm ->
+                            val outBmp = if (includeWm) ImageExportUtils.applyCornerWatermark(processedBitmap) else processedBitmap
+                            ImageExportUtils.shareBitmap(context, outBmp, "OmniTools Image")
+                        },
+                        saveLabel = "Save",
+                        shareLabel = "Share",
+                        saveTestTag = "save_processed_image",
+                        shareTestTag = "share_processed_image"
+                    )
                 }
             }
         }

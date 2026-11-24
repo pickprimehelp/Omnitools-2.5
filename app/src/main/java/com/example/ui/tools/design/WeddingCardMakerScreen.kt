@@ -79,9 +79,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ads.AdManager
 import com.example.ads.TopBannerAd
-import com.example.ads.findActivity
+import com.example.ui.components.WatermarkExportBar
 import com.example.util.ImageExportUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -122,7 +121,6 @@ private data class WeddingTemplate(
 fun WeddingCardMakerScreen(onBack: () -> Unit) {
     BackHandler { onBack() }
     val context = LocalContext.current
-    val activity = remember(context) { context.findActivity() }
     val scope = rememberCoroutineScope()
 
     var eventHeader by remember { mutableStateOf("SHUBH VIVAH") }
@@ -191,7 +189,7 @@ fun WeddingCardMakerScreen(onBack: () -> Unit) {
         if (uri != null) decodeUri(uri) { couplePhoto = it }
     }
 
-    fun renderCardBitmap(width: Int, height: Int): Bitmap {
+    fun renderCardBitmap(width: Int, height: Int, includeWatermark: Boolean = hasWatermark): Bitmap {
         val sx = width / 1080f
         val sy = height / 1440f
         val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -424,7 +422,7 @@ fun WeddingCardMakerScreen(onBack: () -> Unit) {
             }
         }
 
-        if (hasWatermark) {
+        if (includeWatermark) {
             val wmPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = activeTemplate.textColor.copy(alpha = 0.65f).toArgb()
                 textSize = 24f * sx
@@ -440,7 +438,7 @@ fun WeddingCardMakerScreen(onBack: () -> Unit) {
         venueText, rsvpText, templateIndex, photoMode, photoShape,
         groomPhoto, bridePhoto, couplePhoto, selectedCliparts, hasWatermark
     ) {
-        renderCardBitmap(720, 960)
+        renderCardBitmap(720, 960, hasWatermark)
     }
 
     Scaffold(
@@ -643,42 +641,28 @@ fun WeddingCardMakerScreen(onBack: () -> Unit) {
             }
 
             item {
-                WatermarkControlBar(hasWatermark = hasWatermark) {
-                    if (activity != null) {
-                        AdManager.showRewardedAd(activity, onRewardEarned = { hasWatermark = false }, onDismissed = {})
-                    } else {
-                        hasWatermark = false
-                    }
-                }
-            }
-
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = { ImageExportUtils.saveBitmapToGallery(context, renderCardBitmap(1080, 1440), "WeddingCard") },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp)
-                            .testTag("save_wedding_card"),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Save HD Card", fontWeight = FontWeight.Bold)
-                    }
-                    OutlinedButton(
-                        onClick = { ImageExportUtils.shareBitmap(context, renderCardBitmap(1080, 1440), "Wedding Invitation") },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp)
-                            .testTag("share_wedding_card"),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Share Card", fontWeight = FontWeight.Bold)
-                    }
-                }
+                WatermarkExportBar(
+                    hasWatermark = hasWatermark,
+                    onWatermarkUnlocked = { hasWatermark = false },
+                    onExportSave = { includeWm ->
+                        ImageExportUtils.saveBitmapToGallery(
+                            context,
+                            renderCardBitmap(1080, 1440, includeWm),
+                            "WeddingCard"
+                        )
+                    },
+                    onExportShare = { includeWm ->
+                        ImageExportUtils.shareBitmap(
+                            context,
+                            renderCardBitmap(1080, 1440, includeWm),
+                            "Wedding Invitation"
+                        )
+                    },
+                    saveLabel = "Save HD Card",
+                    shareLabel = "Share Card",
+                    saveTestTag = "save_wedding_card",
+                    shareTestTag = "share_wedding_card"
+                )
             }
         }
     }

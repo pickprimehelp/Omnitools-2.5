@@ -78,9 +78,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ads.AdManager
 import com.example.ads.TopBannerAd
-import com.example.ads.findActivity
+import com.example.ui.components.WatermarkExportBar
 import com.example.util.ImageExportUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -114,7 +113,6 @@ private data class ThumbnailDesign(
 fun YouTubeThumbnailMakerScreen(onBack: () -> Unit) {
     BackHandler { onBack() }
     val context = LocalContext.current
-    val activity = remember(context) { context.findActivity() }
     val scope = rememberCoroutineScope()
 
     var headline by remember { mutableStateOf("GROW 10X FASTER IN 2026!") }
@@ -167,7 +165,7 @@ fun YouTubeThumbnailMakerScreen(onBack: () -> Unit) {
         if (uri != null) decodeImage(uri, 600) { logoBitmap = it }
     }
 
-    fun renderThumbnail(width: Int, height: Int, includeSafeZoneGuide: Boolean): Bitmap {
+    fun renderThumbnail(width: Int, height: Int, includeSafeZoneGuide: Boolean, includeWatermark: Boolean = hasWatermark): Bitmap {
         val s = width / 1280f
         val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
@@ -362,7 +360,7 @@ fun YouTubeThumbnailMakerScreen(onBack: () -> Unit) {
             canvas.drawText(subheadline, 78f * s, subTop + 44f * s, subTextPaint)
         }
 
-        if (hasWatermark) {
+        if (includeWatermark) {
             val wmPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = android.graphics.Color.argb(180, 255, 255, 255)
                 textSize = 24f * s
@@ -391,7 +389,7 @@ fun YouTubeThumbnailMakerScreen(onBack: () -> Unit) {
         headline, subheadline, hookBadge, channelName, designIndex,
         bgPhoto, bgDim, logoBitmap, logoCorner, isCircleLogo, showSafeZoneGuide, hasWatermark
     ) {
-        renderThumbnail(960, 540, includeSafeZoneGuide = showSafeZoneGuide)
+        renderThumbnail(960, 540, includeSafeZoneGuide = showSafeZoneGuide, includeWatermark = hasWatermark)
     }
 
     Scaffold(
@@ -561,48 +559,28 @@ fun YouTubeThumbnailMakerScreen(onBack: () -> Unit) {
             }
 
             item {
-                WatermarkControlBar(hasWatermark = hasWatermark) {
-                    if (activity != null) {
-                        AdManager.showRewardedAd(activity, onRewardEarned = { hasWatermark = false }, onDismissed = {})
-                    } else {
-                        hasWatermark = false
-                    }
-                }
-            }
-
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = {
-                            ImageExportUtils.saveBitmapToGallery(
-                                context,
-                                renderThumbnail(1280, 720, includeSafeZoneGuide = false),
-                                "OmniTools_Thumbnail"
-                            )
-                        },
-                        modifier = Modifier.weight(1f).height(50.dp).testTag("save_thumbnail"),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Save 1280×720 HD", fontWeight = FontWeight.Bold)
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            ImageExportUtils.shareBitmap(
-                                context,
-                                renderThumbnail(1280, 720, includeSafeZoneGuide = false),
-                                "YouTube Thumbnail"
-                            )
-                        },
-                        modifier = Modifier.weight(1f).height(50.dp).testTag("share_thumbnail"),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Share", fontWeight = FontWeight.Bold)
-                    }
-                }
+                WatermarkExportBar(
+                    hasWatermark = hasWatermark,
+                    onWatermarkUnlocked = { hasWatermark = false },
+                    onExportSave = { includeWm ->
+                        ImageExportUtils.saveBitmapToGallery(
+                            context,
+                            renderThumbnail(1280, 720, includeSafeZoneGuide = false, includeWatermark = includeWm),
+                            "OmniTools_Thumbnail"
+                        )
+                    },
+                    onExportShare = { includeWm ->
+                        ImageExportUtils.shareBitmap(
+                            context,
+                            renderThumbnail(1280, 720, includeSafeZoneGuide = false, includeWatermark = includeWm),
+                            "YouTube Thumbnail"
+                        )
+                    },
+                    saveLabel = "Save 1280×720 HD",
+                    shareLabel = "Share",
+                    saveTestTag = "save_thumbnail",
+                    shareTestTag = "share_thumbnail"
+                )
             }
         }
     }

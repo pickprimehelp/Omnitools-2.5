@@ -82,47 +82,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ads.AdManager
 import com.example.ads.TopBannerAd
-import com.example.ads.findActivity
+import com.example.ui.components.WatermarkExportBar
 import com.example.util.ImageExportUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-@Composable
-fun WatermarkControlBar(
-    hasWatermark: Boolean,
-    onWatchAdToSaveClean: () -> Unit
-) {
-    if (!hasWatermark) return
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "Watermark active on export",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium
-            )
-            OutlinedButton(
-                onClick = onWatchAdToSaveClean,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.height(48.dp)
-            ) {
-                Text("Remove Watermark", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
 
 private enum class StatusDesignStyle {
     GRADIENT_GLOW,
@@ -159,7 +124,6 @@ private data class StatusTemplate(
 fun StatusMakerScreen(onBack: () -> Unit) {
     BackHandler { onBack() }
     val context = LocalContext.current
-    val activity = remember(context) { context.findActivity() }
     val scope = rememberCoroutineScope()
 
     var quoteText by remember { mutableStateOf("Dream Big. Work Quietly. Let Success Make Noise.") }
@@ -214,7 +178,7 @@ fun StatusMakerScreen(onBack: () -> Unit) {
         }
     }
 
-    fun renderStatus(width: Int, height: Int): Bitmap {
+    fun renderStatus(width: Int, height: Int, includeWatermark: Boolean = hasWatermark): Bitmap {
         val sx = width / 1080f
         val sy = height / 1080f
         val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -364,7 +328,7 @@ fun StatusMakerScreen(onBack: () -> Unit) {
             canvas.drawText(authorText, anchorX, height * 0.78f, authPaint)
         }
 
-        if (hasWatermark) {
+        if (includeWatermark) {
             val wmPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = active.textColor.copy(alpha = 0.6f).toArgb()
                 textSize = 24f * sx
@@ -381,7 +345,7 @@ fun StatusMakerScreen(onBack: () -> Unit) {
         quoteText, authorText, tagBadge, templateIndex, fontOption,
         alignOption, isVerticalStory, bgPhoto, bgDim, hasWatermark
     ) {
-        renderStatus(previewW, previewH)
+        renderStatus(previewW, previewH, hasWatermark)
     }
 
     Scaffold(
@@ -523,37 +487,29 @@ fun StatusMakerScreen(onBack: () -> Unit) {
             }
 
             item {
-                WatermarkControlBar(hasWatermark = hasWatermark) {
-                    if (activity != null) {
-                        AdManager.showRewardedAd(activity, onRewardEarned = { hasWatermark = false }, onDismissed = {})
-                    } else {
-                        hasWatermark = false
-                    }
-                }
-            }
-
-            item {
                 val outH = if (isVerticalStory) 1920 else 1080
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = { ImageExportUtils.saveBitmapToGallery(context, renderStatus(1080, outH), "OmniTools_Status") },
-                        modifier = Modifier.weight(1f).height(50.dp),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Save HD", fontWeight = FontWeight.Bold)
-                    }
-                    OutlinedButton(
-                        onClick = { ImageExportUtils.shareBitmap(context, renderStatus(1080, outH), "Status Card") },
-                        modifier = Modifier.weight(1f).height(50.dp),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Share", fontWeight = FontWeight.Bold)
-                    }
-                }
+                WatermarkExportBar(
+                    hasWatermark = hasWatermark,
+                    onWatermarkUnlocked = { hasWatermark = false },
+                    onExportSave = { includeWm ->
+                        ImageExportUtils.saveBitmapToGallery(
+                            context,
+                            renderStatus(1080, outH, includeWm),
+                            "OmniTools_Status"
+                        )
+                    },
+                    onExportShare = { includeWm ->
+                        ImageExportUtils.shareBitmap(
+                            context,
+                            renderStatus(1080, outH, includeWm),
+                            "Status Card"
+                        )
+                    },
+                    saveLabel = "Save HD",
+                    shareLabel = "Share",
+                    saveTestTag = "save_status_card",
+                    shareTestTag = "share_status_card"
+                )
             }
         }
     }
@@ -609,7 +565,6 @@ private fun StudioCardBuilderScreen(
 ) {
     BackHandler { onBack() }
     val context = LocalContext.current
-    val activity = remember(context) { context.findActivity() }
     val scope = rememberCoroutineScope()
 
     var badge by remember { mutableStateOf(defaultBadge) }
@@ -642,7 +597,7 @@ private fun StudioCardBuilderScreen(
         }
     }
 
-    fun buildExportBitmap(): Bitmap {
+    fun buildExportBitmap(includeWatermark: Boolean = hasWatermark): Bitmap {
         val w = 1080
         val h = (w / aspectRatio).toInt().coerceIn(720, 1920)
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -697,7 +652,7 @@ private fun StudioCardBuilderScreen(
         }
         canvas.drawText(subtitle, w / 2f, h * 0.72f, subPaint)
 
-        if (hasWatermark) {
+        if (includeWatermark) {
             val wmPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = android.graphics.Color.argb(175, 255, 255, 255)
                 textSize = 26f
@@ -708,7 +663,7 @@ private fun StudioCardBuilderScreen(
         return bmp
     }
 
-    val previewBmp = remember(badge, headline, subtitle, paletteIndex, bgPhoto, hasWatermark) { buildExportBitmap() }
+    val previewBmp = remember(badge, headline, subtitle, paletteIndex, bgPhoto, hasWatermark) { buildExportBitmap(hasWatermark) }
 
     Scaffold(
         topBar = {
@@ -798,35 +753,28 @@ private fun StudioCardBuilderScreen(
             item { OutlinedTextField(value = headline, onValueChange = { headline = it }, label = { Text("Main Headline") }, modifier = Modifier.fillMaxWidth()) }
             item { OutlinedTextField(value = subtitle, onValueChange = { subtitle = it }, label = { Text("Subtitle / Footer") }, modifier = Modifier.fillMaxWidth()) }
             item {
-                WatermarkControlBar(hasWatermark = hasWatermark) {
-                    if (activity != null) {
-                        AdManager.showRewardedAd(activity, onRewardEarned = { hasWatermark = false }, onDismissed = {})
-                    } else {
-                        hasWatermark = false
-                    }
-                }
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = { ImageExportUtils.saveBitmapToGallery(context, buildExportBitmap(), exportPrefix) },
-                        modifier = Modifier.weight(1f).height(50.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Save HD")
-                    }
-                    OutlinedButton(
-                        onClick = { ImageExportUtils.shareBitmap(context, buildExportBitmap(), title) },
-                        modifier = Modifier.weight(1f).height(50.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Share")
-                    }
-                }
+                WatermarkExportBar(
+                    hasWatermark = hasWatermark,
+                    onWatermarkUnlocked = { hasWatermark = false },
+                    onExportSave = { includeWm ->
+                        ImageExportUtils.saveBitmapToGallery(
+                            context,
+                            buildExportBitmap(includeWm),
+                            exportPrefix
+                        )
+                    },
+                    onExportShare = { includeWm ->
+                        ImageExportUtils.shareBitmap(
+                            context,
+                            buildExportBitmap(includeWm),
+                            title
+                        )
+                    },
+                    saveLabel = "Save HD",
+                    shareLabel = "Share",
+                    saveTestTag = "save_${exportPrefix.lowercase()}",
+                    shareTestTag = "share_${exportPrefix.lowercase()}"
+                )
             }
         }
     }

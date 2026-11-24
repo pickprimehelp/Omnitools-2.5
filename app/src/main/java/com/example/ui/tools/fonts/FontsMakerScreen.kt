@@ -66,9 +66,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ads.AdManager
 import com.example.ads.TopBannerAd
-import com.example.ads.findActivity
+import com.example.ui.components.WatermarkExportBar
 import com.example.util.ImageExportUtils
 
 data class FontVariant(
@@ -83,7 +82,6 @@ data class FontVariant(
 fun FontsMakerScreen(onBack: () -> Unit) {
     BackHandler { onBack() }
     val context = LocalContext.current
-    val activity = remember(context) { context.findActivity() }
 
     var inputText by remember { mutableStateOf("OmniTools VIP") }
     var selectedPaletteIndex by remember { mutableIntStateOf(0) }
@@ -203,65 +201,34 @@ fun FontsMakerScreen(onBack: () -> Unit) {
             }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            val bmp = renderFontArtBitmap(
-                                text = styledPreview,
-                                startColor = gradStart.toArgb(),
-                                endColor = gradEnd.toArgb(),
-                                fontSize = fontSize,
-                                includeWatermark = !watermarkRemoved
-                            )
-                            ImageExportUtils.saveBitmapToGallery(context, bmp, "OmniTools_FontArt")
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Save Art")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            val bmp = renderFontArtBitmap(
-                                text = styledPreview,
-                                startColor = gradStart.toArgb(),
-                                endColor = gradEnd.toArgb(),
-                                fontSize = fontSize,
-                                includeWatermark = !watermarkRemoved
-                            )
-                            ImageExportUtils.shareBitmap(context, bmp, "OmniTools Font Art")
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Share Art")
-                    }
-                }
-            }
-
-            if (!watermarkRemoved && activity != null) {
-                item {
-                    OutlinedButton(
-                        onClick = {
-                            AdManager.showRewardedAd(
-                                activity = activity,
-                                onRewardEarned = { watermarkRemoved = true },
-                                onDismissed = {}
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Watch Short Ad to Remove Watermark")
-                    }
-                }
+                WatermarkExportBar(
+                    hasWatermark = !watermarkRemoved,
+                    onWatermarkUnlocked = { watermarkRemoved = true },
+                    onExportSave = { includeWm ->
+                        val bmp = renderFontArtBitmap(
+                            text = styledPreview,
+                            startColor = gradStart.toArgb(),
+                            endColor = gradEnd.toArgb(),
+                            fontSize = fontSize,
+                            includeWatermark = includeWm
+                        )
+                        ImageExportUtils.saveBitmapToGallery(context, bmp, "OmniTools_FontArt")
+                    },
+                    onExportShare = { includeWm ->
+                        val bmp = renderFontArtBitmap(
+                            text = styledPreview,
+                            startColor = gradStart.toArgb(),
+                            endColor = gradEnd.toArgb(),
+                            fontSize = fontSize,
+                            includeWatermark = includeWm
+                        )
+                        ImageExportUtils.shareBitmap(context, bmp, "OmniTools Font Art")
+                    },
+                    saveLabel = "Save Art",
+                    shareLabel = "Share Art",
+                    saveTestTag = "save_font_art",
+                    shareTestTag = "share_font_art"
+                )
             }
 
             item {

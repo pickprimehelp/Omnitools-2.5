@@ -4,5 +4,5 @@
         android:gravity="center"
         android:height="66dp"
         android:width="66dp"
-        android:drawable="@drawable/playstore_app_icon_1790781432805"/>
+        android:drawable="@drawable/omnitools_logo" />
 </layer-list>
