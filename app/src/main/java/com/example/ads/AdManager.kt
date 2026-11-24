@@ -130,19 +130,32 @@ object AdManager {
         if (_isInitialized.value || initializing) return
         initializing = true
 
+        val initWatchdog = Runnable {
+            if (initializing && !_isInitialized.value) {
+                initializing = false
+                Log.w(TAG, "MobileAds initialization timed out; allowing retry")
+            }
+        }
+        handler.postDelayed(initWatchdog, 15_000L)
+
         initScope.launch {
             try {
                 MobileAds.initialize(safeContext) { initStatus ->
                     runOnMain {
+                        handler.removeCallbacks(initWatchdog)
                         initializing = false
                         _isInitialized.value = true
-                        Log.d(TAG, "AdMob initialized: ${initStatus.adapterStatusMap.keys}")
+                        val adapters = initStatus.adapterStatusMap.entries.joinToString {
+                            "${it.key}=${it.value.initializationState}"
+                        }
+                        Log.d(TAG, "AdMob initialized: $adapters")
                         preloadInterstitial(safeContext)
                         preloadRewarded(safeContext)
                     }
                 }
             } catch (t: Throwable) {
                 runOnMain {
+                    handler.removeCallbacks(initWatchdog)
                     initializing = false
                     Log.e(TAG, "MobileAds initialization error", t)
                 }
@@ -479,59 +492,123 @@ object AdManager {
 
 private class BannerAdHolder(
     context: Context,
-    private val onLoadedStateChanged: (Boolean) -> Unit
+    private val onLoadedStateChanged: (Boolean) -> Unit,
+    private val onHeightChanged: (Float) -> Unit
 ) {
 
     private val adContext: Context = context.findActivity() ?: context
+    private val density: Float = adContext.resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
     val container = FrameLayout(adContext)
-    private val adView = AdView(adContext)
+    private var adView: AdView? = null
     private val handler = Handler(Looper.getMainLooper())
 
-    val adHeightDp: Float
+    val initialHeightDp: Float
     var hasLoaded = false
     var isLoading = false
     var isDisposed = false
+    private var sdkInitialized = false
 
     private var retryCount = 0
     private var pendingRetry: Runnable? = null
 
     init {
-        val density = adContext.resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
-        val widthDp = (adContext.resources.displayMetrics.widthPixels / density).toInt().coerceAtLeast(320)
+        val estimatedWidthDp = (adContext.resources.displayMetrics.widthPixels / density).toInt().coerceAtLeast(320)
+        val estimatedSize = try {
+            AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(adContext, estimatedWidthDp)
+        } catch (_: Throwable) {
+            AdSize.BANNER
+        }
+        val estimatedHeightPx = estimatedSize.getHeightInPixels(adContext).coerceAtLeast((50f * density).toInt())
+        initialHeightDp = (estimatedHeightPx / density).coerceAtLeast(52f)
 
-        val size = try {
-            AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(adContext, widthDp)
-        } catch (e: Exception) {
+        container.layoutParams = ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        container.minimumHeight = estimatedHeightPx
+
+        container.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                if (isDisposed) return
+                adView?.let { view ->
+                    try {
+                        view.resume()
+                    } catch (_: Throwable) {
+                    }
+                }
+                v.post { tryLoadIfReady() }
+            }
+
+            override fun onViewDetachedFromWindow(v: View) {
+                adView?.let { view ->
+                    try {
+                        view.pause()
+                    } catch (_: Throwable) {
+                    }
+                }
+            }
+        })
+
+        container.addOnLayoutChangeListener { _, left, _, right, _, oldLeft, _, oldRight, _ ->
+            if (isDisposed) return@addOnLayoutChangeListener
+            val newWidth = right - left
+            val oldWidth = oldRight - oldLeft
+            if (newWidth > 0 && newWidth != oldWidth && adView == null) {
+                container.post { tryLoadIfReady() }
+            }
+        }
+    }
+
+    fun setSdkInitialized(initialized: Boolean) {
+        sdkInitialized = initialized
+        if (initialized) {
+            container.post { tryLoadIfReady() }
+        }
+    }
+
+    private fun ensureAdViewCreated(): AdView? {
+        adView?.let { return it }
+        if (isDisposed || !container.isAttachedToWindow || container.width <= 0) {
+            return null
+        }
+
+        // Floor actual container width in dp so AdView NEVER overflows container by even 1px
+        val measuredWidthDp = kotlin.math.floor(container.width / density).toInt().coerceAtLeast(300)
+        val adSize = try {
+            AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(adContext, measuredWidthDp)
+        } catch (e: Throwable) {
             Log.e("TopBannerAd", "Adaptive banner size fallback", e)
             AdSize.BANNER
         }
 
-        val adWidthPx = size.getWidthInPixels(adContext).coerceAtLeast(adContext.resources.displayMetrics.widthPixels)
-        val adHeightPx = size.getHeightInPixels(adContext).coerceAtLeast((52f * density).toInt())
-        adHeightDp = (adHeightPx / density).coerceAtLeast(52f)
-
-        container.layoutParams = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            adHeightPx
-        )
+        val adWidthPx = adSize.getWidthInPixels(adContext).coerceAtMost(container.width)
+        val adHeightPx = adSize.getHeightInPixels(adContext).coerceAtLeast((50f * density).toInt())
+        val actualHeightDp = (adHeightPx / density).coerceAtLeast(52f)
         container.minimumHeight = adHeightPx
+        onHeightChanged(actualHeightDp)
 
-        adView.adUnitId = AdManager.BANNER_ID
-        adView.setAdSize(size)
-        adView.adListener = object : AdListener() {
+        val view = AdView(adContext)
+        view.adUnitId = AdManager.BANNER_ID
+        view.setAdSize(adSize)
+        view.adListener = object : AdListener() {
             override fun onAdLoaded() {
+                if (isDisposed) return
                 hasLoaded = true
                 isLoading = false
                 retryCount = 0
                 pendingRetry?.let { handler.removeCallbacks(it) }
                 pendingRetry = null
+                try {
+                    view.resume()
+                } catch (_: Throwable) {
+                }
                 container.visibility = View.VISIBLE
-                adView.visibility = View.VISIBLE
-                adView.requestLayout()
+                view.visibility = View.VISIBLE
+                view.requestLayout()
                 container.requestLayout()
                 container.invalidate()
                 onLoadedStateChanged(true)
-                Log.d("TopBannerAd", "Banner loaded (${adWidthPx}x${adHeightPx})")
+                Log.d("TopBannerAd", "Banner loaded (${adSize.width}x${adSize.height}dp)")
             }
 
             override fun onAdFailedToLoad(error: LoadAdError) {
@@ -545,7 +622,7 @@ private class BannerAdHolder(
                     val delay = delays[retryCount++]
                     val retry = Runnable {
                         pendingRetry = null
-                        loadIfNeeded()
+                        tryLoadIfReady()
                     }
                     pendingRetry = retry
                     handler.postDelayed(retry, delay)
@@ -558,14 +635,23 @@ private class BannerAdHolder(
             adHeightPx,
             Gravity.CENTER
         )
-        container.addView(adView, params)
+        container.removeAllViews()
+        container.addView(view, params)
+        try {
+            view.resume()
+        } catch (_: Throwable) {
+        }
+        adView = view
+        return view
     }
 
-    fun loadIfNeeded() {
-        if (isDisposed || hasLoaded || isLoading) return
+    fun tryLoadIfReady() {
+        if (isDisposed || !sdkInitialized || hasLoaded || isLoading) return
+        if (!container.isAttachedToWindow || container.width <= 0) return
+        val view = ensureAdViewCreated() ?: return
         isLoading = true
         try {
-            adView.loadAd(AdRequest.Builder().build())
+            view.loadAd(AdRequest.Builder().build())
         } catch (t: Throwable) {
             isLoading = false
             Log.e("TopBannerAd", "Banner load exception", t)
@@ -575,8 +661,11 @@ private class BannerAdHolder(
     fun resume() {
         if (!isDisposed) {
             try {
-                adView.resume()
+                adView?.resume()
             } catch (_: Throwable) {
+            }
+            if (!hasLoaded && !isLoading) {
+                container.post { tryLoadIfReady() }
             }
         }
     }
@@ -584,7 +673,7 @@ private class BannerAdHolder(
     fun pause() {
         if (!isDisposed) {
             try {
-                adView.pause()
+                adView?.pause()
             } catch (_: Throwable) {
             }
         }
@@ -598,8 +687,9 @@ private class BannerAdHolder(
         handler.removeCallbacksAndMessages(null)
         try {
             container.removeAllViews()
-            adView.pause()
-            adView.destroy()
+            adView?.pause()
+            adView?.destroy()
+            adView = null
         } catch (_: Throwable) {
         }
     }
@@ -609,19 +699,22 @@ private class BannerAdHolder(
 fun TopBannerAd(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var isBannerLoaded by remember { mutableStateOf(false) }
+    var bannerHeightDp by remember { mutableStateOf(56f) }
     val holder = remember(context) {
         AdManager.initialize(context)
-        BannerAdHolder(context) { loaded ->
-            isBannerLoaded = loaded
+        BannerAdHolder(
+            context = context,
+            onLoadedStateChanged = { loaded -> isBannerLoaded = loaded },
+            onHeightChanged = { heightDp -> bannerHeightDp = heightDp }
+        ).also {
+            bannerHeightDp = it.initialHeightDp
         }
     }
     val isInitialized by AdManager.isInitializedFlow.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(isInitialized, holder) {
-        if (isInitialized) {
-            holder.loadIfNeeded()
-        }
+        holder.setSdkInitialized(isInitialized)
     }
 
     DisposableEffect(lifecycleOwner, holder) {
@@ -654,7 +747,7 @@ fun TopBannerAd(modifier: Modifier = Modifier) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(holder.adHeightDp.dp)
+                    .height(bannerHeightDp.dp)
                     .padding(vertical = 1.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -668,12 +761,10 @@ fun TopBannerAd(modifier: Modifier = Modifier) {
                 AndroidView(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(holder.adHeightDp.dp),
+                        .height(bannerHeightDp.dp),
                     factory = { holder.container },
                     update = {
-                        if (isInitialized && !holder.hasLoaded && !holder.isLoading) {
-                            holder.loadIfNeeded()
-                        }
+                        holder.setSdkInitialized(isInitialized)
                     }
                 )
             }
