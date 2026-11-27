@@ -11,8 +11,8 @@ android {
         applicationId = "com.aistudio.omnitools.xkrvp"
         minSdk = 24
         targetSdk = 36
-        versionCode = 10
-        versionName = "5.0.0"
+        versionCode = 11
+        versionName = "5.0.1"
         multiDexEnabled = true
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -20,8 +20,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
