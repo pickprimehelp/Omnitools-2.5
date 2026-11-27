@@ -512,6 +512,7 @@ private class BannerAdHolder(
     private var useStandardBannerFallback = false
 
     private var retryCount = 0
+    private var retriesExhausted = false
     private var pendingRetry: Runnable? = null
 
     init {
@@ -553,17 +554,20 @@ private class BannerAdHolder(
             }
         })
 
-        container.addOnLayoutChangeListener { _, left, _, right, _, oldLeft, _, oldRight, _ ->
+        container.addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
             if (isDisposed) return@addOnLayoutChangeListener
             val newWidth = right - left
+            val newHeight = bottom - top
             val oldWidth = oldRight - oldLeft
-            if (newWidth > 0 && newWidth != oldWidth && adView == null) {
+            val oldHeight = oldBottom - oldTop
+            if (newWidth > 0 && newHeight > 0 && (newWidth != oldWidth || newHeight != oldHeight) && adView == null) {
                 container.post { tryLoadIfReady() }
             }
         }
     }
 
     fun setSdkInitialized(initialized: Boolean) {
+        if (sdkInitialized == initialized) return
         sdkInitialized = initialized
         if (initialized) {
             container.post { tryLoadIfReady() }
@@ -584,7 +588,7 @@ private class BannerAdHolder(
 
     private fun ensureAdViewCreated(): AdView? {
         adView?.let { return it }
-        if (isDisposed || !container.isAttachedToWindow || container.width <= 0) {
+        if (isDisposed || !container.isAttachedToWindow || container.width <= 0 || container.height <= 0) {
             return null
         }
 
@@ -619,6 +623,7 @@ private class BannerAdHolder(
                 hasLoaded = true
                 isLoading = false
                 retryCount = 0
+                retriesExhausted = false
                 pendingRetry?.let { handler.removeCallbacks(it) }
                 pendingRetry = null
                 try {
@@ -643,10 +648,10 @@ private class BannerAdHolder(
                     if (BuildConfig.DEBUG) "Ad • Err ${error.code}: $shortMsg" else "Ad"
                 )
                 Log.w("TopBannerAd", "Banner load failed (${error.code}): ${error.message}")
-                if (isDisposed || hasLoaded) return
+                if (isDisposed || hasLoaded || pendingRetry != null) return
 
                 if (retryCount < 5) {
-                    val delays = longArrayOf(2_500L, 5_000L, 10_000L, 20_000L, 40_000L)
+                    val delays = longArrayOf(4_000L, 8_000L, 15_000L, 30_000L, 60_000L)
                     val delay = delays[retryCount++]
                     // Alternate to standard 320x50 banner if adaptive failed, in case inventory/size caused rejection
                     if (!useStandardBannerFallback && retryCount == 1) {
@@ -655,17 +660,19 @@ private class BannerAdHolder(
                     }
                     val retry = Runnable {
                         pendingRetry = null
-                        tryLoadIfReady()
+                        tryLoadIfReady(fromRetry = true)
                     }
                     pendingRetry = retry
                     handler.postDelayed(retry, delay)
+                } else {
+                    retriesExhausted = true
                 }
             }
         }
 
         val params = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            adHeightPx,
             Gravity.CENTER
         )
         container.removeAllViews()
@@ -678,22 +685,29 @@ private class BannerAdHolder(
         return view
     }
 
-    fun tryLoadIfReady() {
+    fun tryLoadIfReady(fromRetry: Boolean = false) {
         if (isDisposed || !sdkInitialized || hasLoaded || isLoading) return
-        if (!container.isAttachedToWindow || container.width <= 0) return
+        if (!fromRetry && (pendingRetry != null || retriesExhausted)) return
+        if (!container.isAttachedToWindow || container.width <= 0 || container.height <= 0) return
         val view = ensureAdViewCreated() ?: return
         isLoading = true
         if (BuildConfig.DEBUG) {
             onStatusTextChanged("Ad • Loading...")
         }
-        try {
-            view.loadAd(AdRequest.Builder().build())
-        } catch (t: Throwable) {
-            isLoading = false
-            if (BuildConfig.DEBUG) {
-                onStatusTextChanged("Ad • Exception: ${t.message?.take(28)}")
+        view.post {
+            if (isDisposed || hasLoaded || adView !== view) {
+                isLoading = false
+                return@post
             }
-            Log.e("TopBannerAd", "Banner load exception", t)
+            try {
+                view.loadAd(AdRequest.Builder().build())
+            } catch (t: Throwable) {
+                isLoading = false
+                if (BuildConfig.DEBUG) {
+                    onStatusTextChanged("Ad • Exception: ${t.message?.take(28)}")
+                }
+                Log.e("TopBannerAd", "Banner load exception", t)
+            }
         }
     }
 
@@ -703,7 +717,7 @@ private class BannerAdHolder(
                 adView?.resume()
             } catch (_: Throwable) {
             }
-            if (!hasLoaded && !isLoading) {
+            if (!hasLoaded && !isLoading && pendingRetry == null && !retriesExhausted) {
                 container.post { tryLoadIfReady() }
             }
         }
@@ -793,9 +807,11 @@ fun TopBannerAd(modifier: Modifier = Modifier) {
                 if (!isBannerLoaded) {
                     Text(
                         text = statusText,
-                        fontSize = 10.sp,
+                        fontSize = if (BuildConfig.DEBUG) 11.sp else 10.sp,
                         maxLines = 1,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                            alpha = if (BuildConfig.DEBUG) 0.75f else 0.55f
+                        )
                     )
                 }
                 AndroidView(
@@ -803,11 +819,8 @@ fun TopBannerAd(modifier: Modifier = Modifier) {
                         .fillMaxWidth()
                         .height(bannerHeightDp.dp),
                     factory = { holder.container },
-                    update = { view ->
+                    update = {
                         holder.setSdkInitialized(isInitialized)
-                        if (isInitialized && !holder.hasLoaded && !holder.isLoading) {
-                            view.post { holder.tryLoadIfReady() }
-                        }
                     }
                 )
             }
