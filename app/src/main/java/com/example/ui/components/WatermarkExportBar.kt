@@ -74,14 +74,18 @@ fun WatermarkExportBar(
             onLoadingChanged = { loading -> isLoadingAd = loading },
             onRewardEarned = {
                 onWatermarkUnlocked()
-                when (thenExport) {
-                    PendingExportAction.SAVE -> onExportSave(false)
-                    PendingExportAction.SHARE -> onExportShare(false)
-                    null -> Unit
-                }
             },
             onAdUnavailable = {
                 // Keep watermark ON when rewarded ad could not load
+            },
+            onDismissed = { rewardEarned ->
+                if (rewardEarned) {
+                    when (thenExport) {
+                        PendingExportAction.SAVE -> onExportSave(false)
+                        PendingExportAction.SHARE -> onExportShare(false)
+                        null -> Unit
+                    }
+                }
             }
         )
     }
